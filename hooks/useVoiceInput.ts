@@ -24,9 +24,17 @@ export interface UseVoiceInputReturn {
   error: string | null;
 }
 
+// AssemblyAI v3 Universal Streaming — replaced legacy v2 realtime (Aug 2025).
+// Server emits "Begin" then "Turn" events. Turn.end_of_turn=true marks an
+// utterance boundary; we treat the formatted transcript at that point as
+// the final transcript and submit.
 const SAMPLE_RATE = 16000;
 const WS_URL = (token: string) =>
-  `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=${SAMPLE_RATE}&token=${token}`;
+  `wss://streaming.assemblyai.com/v3/ws` +
+  `?sample_rate=${SAMPLE_RATE}` +
+  `&encoding=pcm_s16le` +
+  `&format_turns=true` +
+  `&token=${encodeURIComponent(token)}`;
 
 export function useVoiceInput(
   options: UseVoiceInputOptions = {}
@@ -157,42 +165,61 @@ export function useVoiceInput(
         try {
           const msg = JSON.parse(event.data);
 
-          if (msg.message_type === 'PartialTranscript' && msg.text) {
-            setPartialTranscript(msg.text);
-            onPartialTranscript?.(msg.text);
+          // v3 Universal Streaming events
+          //   Begin       — session started
+          //   Turn        — { transcript, end_of_turn, turn_is_formatted, words }
+          //   Termination — session ended
+          //   Error       — { error }
 
-            if (silenceTimerRef.current) {
-              clearTimeout(silenceTimerRef.current);
-            }
-            silenceTimerRef.current = setTimeout(() => {
-              if (finalTextRef.current.trim()) {
-                const text = finalTextRef.current.trim();
-                onFinalTranscript?.(text);
-                stopListening();
-              }
-            }, silenceThresholdMs);
+          if (msg.type === 'Begin') {
+            console.log('JARVIS voice session started:', msg.id);
+            return;
           }
 
-          if (msg.message_type === 'FinalTranscript' && msg.text) {
-            finalTextRef.current =
-              (finalTextRef.current + ' ' + msg.text).trim();
-            setPartialTranscript(finalTextRef.current);
-            onPartialTranscript?.(finalTextRef.current);
-
-            if (silenceTimerRef.current) {
-              clearTimeout(silenceTimerRef.current);
-            }
-            silenceTimerRef.current = setTimeout(() => {
-              if (finalTextRef.current.trim()) {
-                const text = finalTextRef.current.trim();
-                onFinalTranscript?.(text);
-                stopListening();
-              }
-            }, silenceThresholdMs);
+          if (msg.type === 'Error') {
+            const errMsg = msg.error || 'Voice service error';
+            setError(errMsg);
+            onError?.(errMsg);
+            return;
           }
 
-          if (msg.message_type === 'SessionBegins') {
-            console.log('JARVIS voice session started:', msg.session_id);
+          if (msg.type === 'Turn') {
+            const transcript: string = msg.transcript || '';
+            if (!transcript) return;
+
+            if (msg.end_of_turn) {
+              // Final segment: append (or replace if formatted) and submit
+              finalTextRef.current = msg.turn_is_formatted
+                ? transcript.trim()
+                : (finalTextRef.current + ' ' + transcript).trim();
+              setPartialTranscript(finalTextRef.current);
+              onPartialTranscript?.(finalTextRef.current);
+
+              if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+              }
+              silenceTimerRef.current = setTimeout(() => {
+                if (finalTextRef.current.trim()) {
+                  const text = finalTextRef.current.trim();
+                  onFinalTranscript?.(text);
+                  stopListening();
+                }
+              }, silenceThresholdMs);
+            } else {
+              // Live partial — show in input, reset silence timer
+              setPartialTranscript(transcript);
+              onPartialTranscript?.(transcript);
+              if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+              }
+              silenceTimerRef.current = setTimeout(() => {
+                if (finalTextRef.current.trim()) {
+                  const text = finalTextRef.current.trim();
+                  onFinalTranscript?.(text);
+                  stopListening();
+                }
+              }, silenceThresholdMs);
+            }
           }
         } catch {
           // Ignore parse errors on non-JSON messages
