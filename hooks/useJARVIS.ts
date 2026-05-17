@@ -1,34 +1,64 @@
+// hooks/useJARVIS.ts
+// ─── useJARVIS Hook ───────────────────────────────────────────────────────────
+//
+// Core hook for all JARVIS interactions. Extends the original with:
+//   - Typed message union (TextMessage | ApprovalMessage)
+//   - Action request parsing from <action_request> blocks
+//   - approveAction / denyAction handlers
+//   - Approval execution (sends JARVIS_APPROVAL: back to API)
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useCallback, useRef } from 'react';
+import type {
+  Message,
+  TextMessage,
+  ApprovalMessage,
+  JARVISState,
+  ActionRequest,
+  UseJARVISOptions,
+  UseJARVISReturn,
+  ApiMessage,
+} from '@/types/jarvis';
 
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  model?: string;
-  isStreaming?: boolean;
-}
-
-export type JARVISState = 'idle' | 'listening' | 'thinking' | 'speaking';
-
-interface UseJARVISOptions {
-  onStateChange?: (state: JARVISState) => void;
-  onError?: (error: string) => void;
-}
-
-interface UseJARVISReturn {
-  messages: Message[];
-  jarvisState: JARVISState;
-  isLoading: boolean;
-  sendMessage: (content: string, deep?: boolean) => Promise<void>;
-  clearMessages: () => void;
-  currentResponse: string;
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-}
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
+
+// Parse <action_request>{ ... }</action_request> from response text.
+// Returns { cleanText, actionRequest } — cleanText has the block removed.
+function extractActionRequest(text: string): {
+  cleanText: string;
+  actionRequest: ActionRequest | null;
+} {
+  const match = text.match(/<action_request>([\s\S]*?)<\/action_request>/);
+  if (!match) return { cleanText: text, actionRequest: null };
+
+  let actionRequest: ActionRequest | null = null;
+  try {
+    actionRequest = JSON.parse(match[1].trim()) as ActionRequest;
+  } catch {
+    // Malformed JSON — treat as plain text
+    return { cleanText: text, actionRequest: null };
+  }
+
+  const cleanText = text.replace(match[0], '').trim();
+  return { cleanText, actionRequest };
+}
+
+// Convert typed Message[] back to ApiMessage[] for the API
+function toApiMessages(messages: Message[]): ApiMessage[] {
+  return messages
+    .filter(m => !m.isStreaming) // Exclude in-flight messages
+    .map(m => ({
+      role: m.role,
+      content: m.type === 'approval' ? m.content : (m as TextMessage).content,
+    }));
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
   const { onStateChange, onError } = options;
@@ -47,41 +77,45 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     [onStateChange]
   );
 
-  const sendMessage = useCallback(
-    async (content: string, deep = false) => {
-      if (!content.trim() || isLoading) return;
+  // ─── Core send logic ───────────────────────────────────────────────────────
 
+  const sendToAPI = useCallback(
+    async (
+      userContent: string,
+      deep = false,
+      currentMessages: Message[]
+    ) => {
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
 
-      const userMsg: Message = {
+      const userMsg: TextMessage = {
         id: generateId(),
         role: 'user',
-        content: content.trim(),
+        type: 'text',
+        content: userContent.trim(),
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, userMsg]);
+      const updatedMessages = [...currentMessages, userMsg];
+      setMessages(updatedMessages);
       setCurrentResponse('');
       setIsLoading(true);
       updateState('thinking');
 
-      const apiMessages = [...messages, userMsg].map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // Build API messages from full history
+      const apiMessages = toApiMessages(updatedMessages);
 
+      // Streaming placeholder
       const assistantMsgId = generateId();
-      setMessages(prev => [
-        ...prev,
-        {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(),
-          isStreaming: true,
-        },
-      ]);
+      const streamingPlaceholder: TextMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        type: 'text',
+        content: '',
+        timestamp: new Date(),
+        isStreaming: true,
+      };
+      setMessages(prev => [...prev, streamingPlaceholder]);
 
       try {
         const res = await fetch('/api/chat', {
@@ -134,10 +168,11 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
                 fullText += parsed.text;
                 setCurrentResponse(fullText);
 
+                // Update streaming placeholder in real time
                 setMessages(prev =>
                   prev.map(m =>
                     m.id === assistantMsgId
-                      ? { ...m, content: fullText, model: modelUsed }
+                      ? ({ ...m, content: fullText, model: modelUsed } as TextMessage)
                       : m
                   )
                 );
@@ -152,18 +187,40 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
           }
         }
 
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  content: fullText,
-                  model: modelUsed,
-                  isStreaming: false,
-                }
-              : m
-          )
-        );
+        // ── Finalise: check for action request in response ─────────────────
+        const { cleanText, actionRequest } = extractActionRequest(fullText);
+
+        if (actionRequest) {
+          // Replace streaming placeholder with approval message
+          const approvalMsg: ApprovalMessage = {
+            id: assistantMsgId,
+            role: 'assistant',
+            type: 'approval',
+            content: cleanText,
+            timestamp: new Date(),
+            isStreaming: false,
+            model: modelUsed,
+            actionRequest,
+            status: 'pending',
+          };
+          setMessages(prev =>
+            prev.map(m => (m.id === assistantMsgId ? approvalMsg : m))
+          );
+        } else {
+          // Standard text message
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMsgId
+                ? ({
+                    ...m,
+                    content: fullText,
+                    model: modelUsed,
+                    isStreaming: false,
+                  } as TextMessage)
+                : m
+            )
+          );
+        }
 
         setCurrentResponse('');
         updateState('idle');
@@ -181,11 +238,12 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         setMessages(prev =>
           prev.map(m =>
             m.id === assistantMsgId
-              ? {
+              ? ({
                   ...m,
+                  type: 'text',
                   content: `I encountered an error: ${errMessage}. Please try again.`,
                   isStreaming: false,
-                }
+                } as TextMessage)
               : m
           )
         );
@@ -195,8 +253,59 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         setIsLoading(false);
       }
     },
-    [messages, isLoading, updateState, onError]
+    [updateState, onError]
   );
+
+  // ─── Public: sendMessage ───────────────────────────────────────────────────
+
+  const sendMessage = useCallback(
+    async (content: string, deep = false) => {
+      if (!content.trim() || isLoading) return;
+      await sendToAPI(content, deep, messages);
+    },
+    [messages, isLoading, sendToAPI]
+  );
+
+  // ─── Public: approveAction ─────────────────────────────────────────────────
+  // Marks the approval message as approved, then sends the execution request
+  // back to the API using the JARVIS_APPROVAL: prefix convention.
+
+  const approveAction = useCallback(
+    async (messageId: string) => {
+      const msg = messages.find(m => m.id === messageId);
+      if (!msg || msg.type !== 'approval') return;
+
+      // Mark as approved in UI immediately
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === messageId
+            ? ({ ...m, status: 'approved' } as ApprovalMessage)
+            : m
+        )
+      );
+
+      // Build execution message for the API
+      const approvalContent = `JARVIS_APPROVAL: ${JSON.stringify(msg.actionRequest)}`;
+
+      // Use current messages (including the approval message)
+      await sendToAPI(approvalContent, false, messages);
+    },
+    [messages, sendToAPI]
+  );
+
+  // ─── Public: denyAction ────────────────────────────────────────────────────
+
+  const denyAction = useCallback((messageId: string) => {
+    setMessages(prev =>
+      prev.map(m =>
+        m.id === messageId && m.type === 'approval'
+          ? ({ ...m, status: 'denied' } as ApprovalMessage)
+          : m
+      )
+    );
+  }, []);
+
+  // ─── Public: clearMessages ─────────────────────────────────────────────────
 
   const clearMessages = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -211,8 +320,9 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     jarvisState,
     isLoading,
     sendMessage,
+    approveAction,
+    denyAction,
     clearMessages,
     currentResponse,
-    setMessages,
   };
 }

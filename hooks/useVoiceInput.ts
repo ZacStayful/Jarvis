@@ -208,7 +208,7 @@ export function useVoiceInput(
       };
 
       ws.onclose = event => {
-        if (voiceState === 'listening' && !event.wasClean) {
+        if (wsRef.current === ws && !event.wasClean) {
           const errMsg = 'Voice connection dropped';
           setError(errMsg);
           onError?.(errMsg);

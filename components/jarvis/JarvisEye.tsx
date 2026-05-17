@@ -1,6 +1,6 @@
 "use client";
 
-import type { JARVISState } from "@/hooks/useJARVIS";
+import type { JARVISState } from "@/types/jarvis";
 
 interface JarvisEyeProps {
   state: JARVISState;

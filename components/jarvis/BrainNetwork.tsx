@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { JARVISState } from "@/hooks/useJARVIS";
+import type { JARVISState } from "@/types/jarvis";
 
 interface Node {
   x: number;

@@ -18,13 +18,15 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
-import { useJARVIS, type JARVISState, type Message } from "@/hooks/useJARVIS";
+import { useJARVIS } from "@/hooks/useJARVIS";
+import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useTTS } from "@/hooks/useTTS";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
 import { Bubble } from "@/components/jarvis/Bubble";
+import { MessageRenderer } from "@/components/MessageRenderer";
 import {
   CommandView,
   ConversationView,
@@ -55,7 +57,7 @@ export default function JarvisPage() {
   const [input, setInput] = useState("");
   const feedRef = useRef<HTMLDivElement | null>(null);
 
-  const { messages, jarvisState, isLoading, sendMessage, setMessages } = useJARVIS();
+  const { messages, jarvisState, isLoading, sendMessage, approveAction, denyAction } = useJARVIS();
 
   const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
@@ -76,7 +78,7 @@ export default function JarvisPage() {
     : jarvisState;
 
   // Track which message ids have already been spoken
-  const spokenIdsRef = useRef<Set<string>>(new Set(["welcome"]));
+  const spokenIdsRef = useRef<Set<string>>(new Set());
 
   // Speak newly completed assistant messages
   useEffect(() => {
@@ -93,19 +95,6 @@ export default function JarvisPage() {
       speak(latest.content);
     }
   }, [messages, muted, speak]);
-
-  // Welcome message on first mount
-  useEffect(() => {
-    setMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        content:
-          "Good to have you back, Zac. Systems are online. Pipeline is active. How may I assist?",
-        timestamp: new Date(),
-      },
-    ]);
-  }, [setMessages]);
 
   // Auto-scroll message feed
   useEffect(() => {
@@ -170,13 +159,21 @@ export default function JarvisPage() {
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
         {!hasView ? (
-          <NoViewLayout state={state} messages={messages} feedRef={feedRef} />
+          <NoViewLayout
+            state={state}
+            messages={messages}
+            feedRef={feedRef}
+            onApprove={approveAction}
+            onDeny={denyAction}
+          />
         ) : (
           <SplitLayout
             state={state}
             messages={messages}
             feedRef={feedRef}
             activeView={activeView}
+            onApprove={approveAction}
+            onDeny={denyAction}
           />
         )}
       </div>
@@ -357,10 +354,14 @@ function NoViewLayout({
   state,
   messages,
   feedRef,
+  onApprove,
+  onDeny,
 }: {
   state: JARVISState;
   messages: Message[];
   feedRef: React.RefObject<HTMLDivElement | null>;
+  onApprove: (id: string) => void;
+  onDeny: (id: string) => void;
 }) {
   return (
     <div
@@ -436,12 +437,28 @@ function NoViewLayout({
           flex: 1,
           overflowY: "auto",
           width: "100%",
-          maxWidth: 520,
+          maxWidth: 640,
           padding: "0 20px 12px",
         }}
       >
+        {messages.length === 0 && (
+          <div style={{ marginTop: 12 }}>
+            <Bubble
+              msg={{
+                role: "assistant",
+                content:
+                  "Good to have you back, Zac. Systems are online. Pipeline is active. How may I assist?",
+              }}
+            />
+          </div>
+        )}
         {messages.map((m) => (
-          <Bubble key={m.id} msg={m} />
+          <MessageRenderer
+            key={m.id}
+            message={m}
+            onApprove={onApprove}
+            onDeny={onDeny}
+          />
         ))}
       </div>
     </div>
@@ -453,11 +470,15 @@ function SplitLayout({
   messages,
   feedRef,
   activeView,
+  onApprove,
+  onDeny,
 }: {
   state: JARVISState;
   messages: Message[];
   feedRef: React.RefObject<HTMLDivElement | null>;
   activeView: ViewId;
+  onApprove: (id: string) => void;
+  onDeny: (id: string) => void;
 }) {
   return (
     <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
@@ -506,7 +527,13 @@ function SplitLayout({
         {activeView === "leads" && <LeadsView />}
         {activeView === "tasks" && <TasksView />}
         {activeView === "intelligence" && <IntelligenceView />}
-        {activeView === "log" && <ConversationView messages={messages} />}
+        {activeView === "log" && (
+          <ConversationView
+            messages={messages}
+            onApprove={onApprove}
+            onDeny={onDeny}
+          />
+        )}
       </div>
     </div>
   );

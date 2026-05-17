@@ -19,7 +19,8 @@ import {
   MOCK_TASKS,
 } from "@/lib/jarvis-mock-data";
 import { Bubble } from "./Bubble";
-import type { Message } from "@/hooks/useJARVIS";
+import { MessageRenderer } from "@/components/MessageRenderer";
+import type { Message } from "@/types/jarvis";
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -546,7 +547,15 @@ export function IntelligenceView() {
   );
 }
 
-export function ConversationView({ messages }: { messages: Message[] }) {
+export function ConversationView({
+  messages,
+  onApprove,
+  onDeny,
+}: {
+  messages: Message[];
+  onApprove: (id: string) => void;
+  onDeny: (id: string) => void;
+}) {
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -556,7 +565,12 @@ export function ConversationView({ messages }: { messages: Message[] }) {
       <SectionLabel>CONVERSATION LOG</SectionLabel>
       <div>
         {messages.map((m) => (
-          <Bubble key={m.id} msg={m} />
+          <MessageRenderer
+            key={m.id}
+            message={m}
+            onApprove={onApprove}
+            onDeny={onDeny}
+          />
         ))}
         <div ref={endRef} />
       </div>

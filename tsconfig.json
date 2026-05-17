@@ -23,5 +23,12 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "STR Estimate income logic path for API",
+    "Stayful Lead-Customer understanding",
+    "n8n workflows",
+    "SEO Skills",
+    "seo"
+  ]
 }
