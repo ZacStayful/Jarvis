@@ -71,12 +71,33 @@ export default function JarvisPage() {
 
   const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
+  // Always-on voice — persisted in localStorage, default on
+  const [voiceAlwaysOn, setVoiceAlwaysOn] = useState(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("jarvis_voice_always_on");
+    if (stored !== null) setVoiceAlwaysOn(stored === "true");
+  }, []);
+  const toggleVoiceAlwaysOn = () => {
+    const next = !voiceAlwaysOn;
+    setVoiceAlwaysOn(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("jarvis_voice_always_on", String(next));
+    }
+  };
+
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
       const route = routeCommand(text);
       if (route) setActiveView(route);
       sendMessage(text);
+      // Re-arm listening after the silence-triggered stop, if always-on
+      if (voiceAlwaysOn) {
+        setTimeout(() => {
+          startListening().catch(() => {});
+        }, 600);
+      }
     },
   });
 
@@ -105,6 +126,43 @@ export default function JarvisPage() {
       speak(latest.content);
     }
   }, [messages, muted, speak]);
+
+  // Auto-greet on first mount (after login). Uses sessionStorage so a hard
+  // refresh inside the same tab doesn't keep replaying the welcome.
+  const greetedRef = useRef(false);
+  useEffect(() => {
+    if (greetedRef.current) return;
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem("jarvis_greeted") === "true") {
+      greetedRef.current = true;
+      return;
+    }
+    greetedRef.current = true;
+    window.sessionStorage.setItem("jarvis_greeted", "true");
+    if (!muted) {
+      speak("Welcome back, Zac. Systems are online. How may I assist?");
+    }
+  }, [muted, speak]);
+
+  // Always-on voice: auto-start on mount and restart whenever JARVIS stops
+  // speaking. Pause during JARVIS's own speech so the mic doesn't pick up
+  // and transcribe its replies (feedback loop).
+  useEffect(() => {
+    if (!voiceAlwaysOn) {
+      if (isListening) stopListening();
+      return;
+    }
+    if (isSpeaking) {
+      if (isListening) stopListening();
+      return;
+    }
+    if (!isListening && !isLoading) {
+      const t = setTimeout(() => {
+        startListening().catch(() => {});
+      }, 400);
+      return () => clearTimeout(t);
+    }
+  }, [voiceAlwaysOn, isSpeaking, isListening, isLoading, startListening, stopListening]);
 
   // Auto-scroll message feed
   useEffect(() => {
@@ -208,7 +266,8 @@ export default function JarvisPage() {
         onSend={handleSend}
         isListening={isListening}
         partialTranscript={partialTranscript}
-        onToggleListen={isListening ? stopListening : startListening}
+        onToggleListen={toggleVoiceAlwaysOn}
+        voiceAlwaysOn={voiceAlwaysOn}
         state={state}
         isLoading={isLoading}
       />
@@ -575,6 +634,7 @@ function CommandInput({
   isListening,
   partialTranscript,
   onToggleListen,
+  voiceAlwaysOn,
   state,
   isLoading,
 }: {
@@ -584,6 +644,7 @@ function CommandInput({
   isListening: boolean;
   partialTranscript: string;
   onToggleListen: () => void;
+  voiceAlwaysOn: boolean;
   state: JARVISState;
   isLoading: boolean;
 }) {
@@ -594,8 +655,10 @@ function CommandInput({
     }
   };
   const isActive = state !== "idle";
-  const displayValue = isListening && partialTranscript ? partialTranscript : input;
-  const canSend = input.trim().length > 0 && !isLoading && !isListening;
+  // Show partial transcript while listening, unless the user has started typing
+  const displayValue =
+    isListening && partialTranscript && input.length === 0 ? partialTranscript : input;
+  const canSend = input.trim().length > 0 && !isLoading;
 
   return (
     <div
@@ -628,8 +691,8 @@ function CommandInput({
           value={displayValue}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder={isListening ? "Listening…" : "Command JARVIS…"}
-          disabled={isListening || isLoading}
+          placeholder={isListening ? "Listening… (or type)" : "Command JARVIS…"}
+          disabled={isLoading}
           style={{
             flex: 1,
             background: "none",
@@ -644,22 +707,36 @@ function CommandInput({
         <div style={{ display: "flex", gap: 4 }}>
           <button
             onClick={onToggleListen}
-            disabled={isLoading}
             style={{
               width: 30,
               height: 30,
               borderRadius: 6,
-              border: `1px solid ${isListening ? C.amber + "66" : C.border}`,
-              background: isListening ? `${C.amber}15` : "transparent",
+              border: `1px solid ${
+                voiceAlwaysOn
+                  ? isListening
+                    ? C.amber + "66"
+                    : C.primary + "66"
+                  : C.border
+              }`,
+              background: voiceAlwaysOn
+                ? isListening
+                  ? `${C.amber}15`
+                  : `${C.primary}15`
+                : "transparent",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               transition: "all .2s",
             }}
-            aria-label={isListening ? "Stop voice input" : "Start voice input"}
+            title={voiceAlwaysOn ? "Voice always-on (click to disable)" : "Voice off (click to enable always-on)"}
+            aria-label={voiceAlwaysOn ? "Disable always-on voice" : "Enable always-on voice"}
           >
-            {isListening ? <MicOff size={13} color={C.amber} /> : <Mic size={13} color={C.textLow} />}
+            {voiceAlwaysOn ? (
+              <Mic size={13} color={isListening ? C.amber : C.bright} />
+            ) : (
+              <MicOff size={13} color={C.textLow} />
+            )}
           </button>
           <button
             onClick={onSend}
