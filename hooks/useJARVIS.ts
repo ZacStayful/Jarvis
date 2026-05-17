@@ -16,10 +16,18 @@ import type {
   ApprovalMessage,
   JARVISState,
   ActionRequest,
-  UseJARVISOptions,
+  UseJARVISOptions as BaseUseJARVISOptions,
   UseJARVISReturn,
   ApiMessage,
 } from '@/types/jarvis';
+import type { ViewRoute } from '@/lib/commandRouter';
+
+export type { ViewRoute };
+
+// Phase 5 extension: onRoute callback for view navigation events
+type UseJARVISOptions = BaseUseJARVISOptions & {
+  onRoute?: (view: ViewRoute, params?: Record<string, unknown>) => void;
+};
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -61,7 +69,7 @@ function toApiMessages(messages: Message[]): ApiMessage[] {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
-  const { onStateChange, onError } = options;
+  const { onStateChange, onError, onRoute } = options;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [jarvisState, setJARVISState] = useState<JARVISState>('idle');
@@ -155,6 +163,13 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
 
             try {
               const parsed = JSON.parse(raw);
+
+              if (parsed.type === 'route') {
+                onRoute?.(
+                  parsed.view as ViewRoute,
+                  parsed.params as Record<string, unknown> | undefined
+                );
+              }
 
               if (parsed.type === 'start') {
                 modelUsed = parsed.model;
@@ -253,7 +268,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         setIsLoading(false);
       }
     },
-    [updateState, onError]
+    [updateState, onError, onRoute]
   );
 
   // ─── Public: sendMessage ───────────────────────────────────────────────────

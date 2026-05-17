@@ -18,6 +18,7 @@
 import { NextRequest } from 'next/server';
 import { buildMcpServers } from '@/lib/mcp-servers';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
+import { detectCommand, ROUTE_RESPONSES } from '@/lib/commandRouter';
 import type { ApiMessage } from '@/types/jarvis';
 
 export const runtime = 'edge';
@@ -77,7 +78,15 @@ export async function POST(req: NextRequest) {
 
   // ── Build system prompt ────────────────────────────────────────────────────
   const systemPrompt = buildSystemPrompt(missingIntegrations);
-  const model = deep ? OPUS_MODEL : SONNET_MODEL;
+
+  // ── Phase 5: detect navigation commands on the last user message ──────────
+  const lastUserMessage = messages.filter(m => m.role === 'user').at(-1);
+  const commandResult = lastUserMessage
+    ? detectCommand(lastUserMessage.content)
+    : { view: null, params: undefined, isDeep: false };
+
+  const useDeep = deep || commandResult.isDeep;
+  const model = useDeep ? OPUS_MODEL : SONNET_MODEL;
 
   // ── Build streaming response ───────────────────────────────────────────────
   const responseStream = new ReadableStream({
@@ -89,6 +98,35 @@ export async function POST(req: NextRequest) {
           // Controller already closed
         }
       };
+
+      // Emit route event first so the UI can switch views immediately
+      if (commandResult.view) {
+        send({
+          type: 'route',
+          view: commandResult.view,
+          params: commandResult.params,
+        });
+      }
+
+      // Simple nav commands (everything except investment-dashboard) get a
+      // canned JARVIS verbal response streamed word-by-word, then end.
+      const isSimpleNavCommand =
+        commandResult.view !== null &&
+        commandResult.view !== 'investment-dashboard';
+
+      if (isSimpleNavCommand && commandResult.view) {
+        send({ type: 'start', model });
+        const verbalResponse =
+          ROUTE_RESPONSES[commandResult.view] ?? 'Navigating now, sir.';
+        const words = verbalResponse.split(' ');
+        for (const word of words) {
+          send({ type: 'text', text: word + ' ' });
+          await new Promise(r => setTimeout(r, 30));
+        }
+        send('[DONE]');
+        controller.close();
+        return;
+      }
 
       try {
         // ── Call Anthropic API with MCP + streaming ────────────────────────

@@ -18,6 +18,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
+import type { ViewRoute } from "@/lib/commandRouter";
 import { useJARVIS } from "@/hooks/useJARVIS";
 import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -27,6 +28,8 @@ import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
 import { Bubble } from "@/components/jarvis/Bubble";
 import { MessageRenderer } from "@/components/MessageRenderer";
+import NewsBriefingView from "@/components/views/NewsBriefingView";
+import InvestmentDashboardView from "@/components/views/InvestmentDashboardView";
 import {
   CommandView,
   ConversationView,
@@ -54,10 +57,17 @@ const SHORT_STATUS: Record<JARVISState, string> = {
 export default function JarvisPage() {
   const router = useRouter();
   const [activeView, setActiveView] = useState<ViewId | null>(null);
+  const [routedView, setRoutedView] = useState<ViewRoute>(null);
+  const [viewParams, setViewParams] = useState<Record<string, unknown>>({});
   const [input, setInput] = useState("");
   const feedRef = useRef<HTMLDivElement | null>(null);
 
-  const { messages, jarvisState, isLoading, sendMessage, approveAction, denyAction } = useJARVIS();
+  const { messages, jarvisState, isLoading, sendMessage, approveAction, denyAction } = useJARVIS({
+    onRoute: (view, params) => {
+      setRoutedView(view);
+      if (params) setViewParams(params);
+    },
+  });
 
   const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
@@ -151,14 +161,28 @@ export default function JarvisPage() {
       <Header
         state={state}
         activeView={activeView}
-        onNavBack={() => setActiveView(null)}
+        routedView={routedView}
+        onNavBack={() => {
+          setActiveView(null);
+          setRoutedView(null);
+        }}
         onLogout={handleLogout}
         muted={muted}
         onToggleMuted={toggleMuted}
       />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
-        {!hasView ? (
+        {routedView === "news-briefing" ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <NewsBriefingView autoFetch />
+          </div>
+        ) : routedView === "investment-dashboard" ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <InvestmentDashboardView
+              initialQuery={viewParams.query as string | undefined}
+            />
+          </div>
+        ) : !hasView ? (
           <NoViewLayout
             state={state}
             messages={messages}
@@ -199,6 +223,7 @@ export default function JarvisPage() {
 function Header({
   state,
   activeView,
+  routedView,
   onNavBack,
   onLogout,
   muted,
@@ -206,11 +231,13 @@ function Header({
 }: {
   state: JARVISState;
   activeView: ViewId | null;
+  routedView: ViewRoute;
   onNavBack: () => void;
   onLogout: () => void;
   muted: boolean;
   onToggleMuted: () => void;
 }) {
+  const showBack = activeView !== null || routedView !== null;
   const [time, setTime] = useState("");
   useEffect(() => {
     const update = () => {
@@ -252,7 +279,7 @@ function Header({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {activeView && (
+        {showBack && (
           <button
             onClick={onNavBack}
             style={{
