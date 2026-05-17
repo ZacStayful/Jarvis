@@ -1,0 +1,87 @@
+<!--
+  STAYFUL — Uplift Component
+  CSS: HTML__css__brand-styles.css
+  Position: IMMEDIATELY above top CTA block (Section 4 of canonical order)
+  Rules: STAYFUL__postcode-data__uplift-component.md
+  Data source: STAYFUL__postcode-data__regional-reference-table.md
+
+  CRITICAL: Only add this component if Phase 1 audit recommends it.
+  Never add without Phase 1 recommendation.
+-->
+
+
+<!-- ============================================================
+     UPLIFT COMPONENT
+     - One per page only — never repeated at bottom CTA
+     - Mobile (560px): .sf-uplift-grid collapses to 1fr
+     - "Conservative estimate" label is required
+     - Source line is exact wording — do not paraphrase
+     ============================================================ -->
+
+<div class="sf-uplift-component">
+
+  <div class="sf-uplift-header">
+    <span class="sf-uplift-label">Conservative estimate</span>
+    <h3 class="sf-uplift-title">
+      What a [property type] in [City] typically earns
+    </h3>
+  </div>
+
+  <div class="sf-uplift-grid">
+
+    <!-- Long-term tenancy cell -->
+    <div class="sf-uplift-cell">
+      <span class="sf-uplift-cell-label">Long-term tenancy</span>
+      <span class="sf-uplift-cell-figure">£[X]</span>
+      <span class="sf-uplift-cell-period">per month</span>
+    </div>
+
+    <!-- Short-term letting cell -->
+    <div class="sf-uplift-cell">
+      <span class="sf-uplift-cell-label">Short-term letting</span>
+      <span class="sf-uplift-cell-figure">£[Y]</span>
+      <span class="sf-uplift-cell-period">per month, net</span>
+    </div>
+
+  </div>
+
+  <!-- Full-width green difference bar -->
+  <div class="sf-uplift-difference">
+    Conservative uplift
+    <span class="sf-uplift-difference-figure">[Z]%</span>
+  </div>
+
+  <!-- Source attribution — exact wording -->
+  <p class="sf-uplift-source">
+    Based on enquiry data from comparable properties in [area/region].
+  </p>
+
+</div>
+
+
+<!--
+  Notes:
+  - The figures (X, Y, Z) must reference the conservative range in
+    STAYFUL__postcode-data__regional-reference-table.md
+  - Never use a figure exceeding the regional conservative range
+  - For low-sample regions (Liverpool, Chester), add a disclaimer
+    sentence: "Based on a limited sample of comparable properties
+    in [region]; figures may vary."
+  - For Devon / Torbay, ALWAYS use the 67% floor — never higher
+  - The mobile breakpoint (560px) automatically collapses the
+    grid to single column via the brand-styles.css media query
+-->
+
+
+<!-- ============================================================
+     LOW-SAMPLE DISCLAIMER (only if needed)
+     Use for: Liverpool, Chester (3 data points each)
+     ============================================================ -->
+
+<!-- Insert this paragraph below the uplift component for low-sample regions: -->
+
+<p style="font-size:13px; font-weight:600; color:#5D8156; opacity:0.7; text-align:center; margin-top:14px;">
+  Based on a limited sample of comparable [Liverpool / Chester] properties.
+  The uplift figure for individual properties varies; the estimate form gives a
+  property-specific figure.
+</p>

@@ -1,0 +1,76 @@
+<!--
+  STAYFUL — Owner Testimonial + NAP Block + Last Updated Label
+  CSS: HTML__css__brand-styles.css
+  Positions:
+    - Testimonial: Zone 3, Section 16 of canonical order
+    - NAP block: Zone 3, Section 17 of canonical order
+    - Last Updated: Section 1, below H1
+  Rules: STAYFUL__phase-2-sections__stayful-specific-html.md (Sections C, D, J)
+-->
+
+
+<!-- ============================================================
+     LAST UPDATED LABEL
+     Position: BELOW the H1
+     Refresh quarterly with dateModified update
+     ============================================================ -->
+
+<p class="sf-lastupdated">
+  Last updated: [Month Year]
+</p>
+
+
+<!-- ============================================================
+     OWNER TESTIMONIAL — ONE per page only
+     Rules:
+       - Always anonymised (no photo, no name)
+       - Always include slowest month figure
+       - Pull quote format with property descriptor label
+       - Format: "Owner, [property type], [area]"
+     ============================================================ -->
+
+<div class="sf-testimonial">
+  <span class="sf-testimonial-label">Owner example</span>
+  <p class="sf-testimonial-quote">
+    Three-bed terraced, LS6 (Headingley, Leeds). Previously £1,150/month long-let;
+    now nets £2,380/month average across the year. Slowest month: £1,720.
+    Best month: £3,840 (festival weekend in August).
+  </p>
+  <div class="sf-testimonial-attribution">
+    — Owner, three-bed terraced, Leeds
+  </div>
+</div>
+
+
+<!-- ============================================================
+     NAP / CONTACT BLOCK
+     Position: Zone 3, late in the page
+     Includes phone (linked) + optional address/hours
+     ============================================================ -->
+
+<div class="sf-nap">
+  <a href="tel:01134790251" class="sf-nap-phone">0113 479 0251</a>
+  <p style="font-size:13px; font-weight:600; opacity:0.75; margin:6px 0 0;">
+    Speak to a member of the Stayful team about your [City] property.
+    Or run the income estimate first — it shows the figure before any conversation.
+  </p>
+</div>
+
+
+<!--
+  Notes — Owner testimonial:
+  - One per page maximum
+  - Worst month figure ALWAYS included — its absence makes the testimonial read as marketing
+  - Use real anonymised data; never composite or invented case studies
+  - The attribution line is plain text — no italics, no quotation marks
+
+  Notes — NAP block:
+  - Phone styled at 20px, brand colour, no underline
+  - The accompanying sentence balances the phone CTA with a low-friction
+    alternative (running the estimate first)
+  - Schema LocalBusiness telephone field must match this number exactly
+
+  Notes — Last updated label:
+  - Updates quarterly per CORE__06_measurement__update-cadence-and-triggers.md
+  - The dateModified field in the WebPage schema must match the month/year shown here
+-->
