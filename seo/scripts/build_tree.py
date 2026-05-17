@@ -361,7 +361,7 @@ def _render_top_readme(by_cat: dict[str, list[dict]]) -> str:
         "| 1. Parse sitemap | `index/all-urls.json`, `index/summary.json` | ✅ |",
         "| 2. Classify | `index/classified.json`, `index/by-category.json`, `index/city-service-matrix.json` | ✅ |",
         "| 3. Folder tree + stubs | `categories/**/README.md`, `categories/**/pages/*.md` | ✅ |",
-        "| 4. Gap analysis | `gap-analysis/*.md` | ⬜ |",
+        "| 4. Gap analysis | `gap-analysis/*.md` | ✅ |",
         "| 5. Live-page audit | populated stub on-page snapshots | ⬜ |",
         "| 6. Opportunity scoring | `gap-analysis/backlog.md` | ⬜ |",
         "| 7. Revisions + new pages | `working/revisions/`, `working/new-pages/` | ⬜ |",
