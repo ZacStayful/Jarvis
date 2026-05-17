@@ -9,6 +9,7 @@ const ELEVENLABS_MODEL = 'eleven_turbo_v2_5';
 export async function POST(req: NextRequest) {
   try {
     if (!ELEVENLABS_API_KEY) {
+      console.error('TTS error: ELEVENLABS_API_KEY env var is not set');
       return NextResponse.json(
         { error: 'ELEVENLABS_API_KEY not configured' },
         { status: 500 }
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
 
     const voice = voiceId || DEFAULT_VOICE_ID;
     if (!voice) {
+      console.error('TTS error: ELEVENLABS_VOICE_ID env var is not set (and no voiceId in body)');
       return NextResponse.json(
         { error: 'No voice id supplied and ELEVENLABS_VOICE_ID not configured' },
         { status: 500 }
