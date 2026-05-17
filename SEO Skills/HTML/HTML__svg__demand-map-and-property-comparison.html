@@ -1,0 +1,227 @@
+<!--
+  STAYFUL — SVG Visuals: Demand Catchment Map + Property Comparison Card
+  Rules: STAYFUL__brand__components-html-library.md (general SVG rules)
+  CWV: SVG containers have explicit dimensions; H1 must appear BEFORE these in source order
+-->
+
+
+<!-- ============================================================
+     VISUAL 1 — DEMAND CATCHMENT MAP
+     Position: BEFORE the demand drivers H2
+     Rules:
+       - viewBox minimum 500px height for 5+ markers
+       - Every marker label uses a white pill background rectangle
+       - Centre location label in a pill below the marker (not inside)
+       - Legend at the very bottom with 40px clear space above
+       - Brand palette only
+       - role="img" with descriptive aria-label
+       - "Illustrative — not to scale" at bottom right
+     ============================================================ -->
+
+<div class="sf-svg-wrap">
+  <svg viewBox="0 0 600 500"
+       xmlns="http://www.w3.org/2000/svg"
+       role="img"
+       aria-label="[City] demand catchment map showing key short-term let demand drivers">
+
+    <defs>
+      <radialGradient id="mapbg2" cx="50%" cy="50%" r="60%">
+        <stop offset="0%" stop-color="#a8c9b8" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#BAD6C7" stop-opacity="0.1"/>
+      </radialGradient>
+      <filter id="ds2" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#5D8156" flood-opacity="0.15"/>
+      </filter>
+    </defs>
+
+    <!-- Background -->
+    <rect width="600" height="500" fill="#ffffff"/>
+    <circle cx="300" cy="240" r="220" fill="url(#mapbg2)"/>
+
+    <!-- Centre marker (the city) -->
+    <circle cx="300" cy="240" r="14" fill="#5D8156" filter="url(#ds2)"/>
+    <rect x="240" y="265" width="120" height="26" fill="#ffffff" rx="13" filter="url(#ds2)"/>
+    <text x="300" y="282" font-family="-apple-system, sans-serif"
+          font-size="13" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [City Centre]
+    </text>
+
+    <!-- Demand driver 1 (top left) -->
+    <circle cx="180" cy="120" r="8" fill="#5D8156" opacity="0.7"/>
+    <rect x="30" y="100" width="140" height="40" fill="#ffffff" rx="6" filter="url(#ds2)"/>
+    <text x="100" y="118" font-family="-apple-system, sans-serif"
+          font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [Demand driver name]
+    </text>
+    <text x="100" y="132" font-family="-apple-system, sans-serif"
+          font-size="10" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      [Type: e.g. NHS Trust]
+    </text>
+
+    <!-- Demand driver 2 (top right) -->
+    <circle cx="430" cy="140" r="8" fill="#5D8156" opacity="0.7"/>
+    <rect x="430" y="120" width="140" height="40" fill="#ffffff" rx="6" filter="url(#ds2)"/>
+    <text x="500" y="138" font-family="-apple-system, sans-serif"
+          font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [Demand driver name]
+    </text>
+    <text x="500" y="152" font-family="-apple-system, sans-serif"
+          font-size="10" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      [Type: e.g. Event venue]
+    </text>
+
+    <!-- Demand driver 3 (right) -->
+    <circle cx="440" cy="280" r="8" fill="#5D8156" opacity="0.7"/>
+    <rect x="440" y="260" width="140" height="40" fill="#ffffff" rx="6" filter="url(#ds2)"/>
+    <text x="510" y="278" font-family="-apple-system, sans-serif"
+          font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [Demand driver name]
+    </text>
+    <text x="510" y="292" font-family="-apple-system, sans-serif"
+          font-size="10" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      [Type: e.g. University]
+    </text>
+
+    <!-- Demand driver 4 (bottom right) -->
+    <circle cx="370" cy="380" r="8" fill="#5D8156" opacity="0.7"/>
+    <rect x="370" y="380" width="140" height="40" fill="#ffffff" rx="6" filter="url(#ds2)"/>
+    <text x="440" y="398" font-family="-apple-system, sans-serif"
+          font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [Demand driver name]
+    </text>
+    <text x="440" y="412" font-family="-apple-system, sans-serif"
+          font-size="10" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      [Type: e.g. Major employer]
+    </text>
+
+    <!-- Demand driver 5 (bottom left) -->
+    <circle cx="200" cy="360" r="8" fill="#5D8156" opacity="0.7"/>
+    <rect x="30" y="340" width="140" height="40" fill="#ffffff" rx="6" filter="url(#ds2)"/>
+    <text x="100" y="358" font-family="-apple-system, sans-serif"
+          font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle">
+      [Demand driver name]
+    </text>
+    <text x="100" y="372" font-family="-apple-system, sans-serif"
+          font-size="10" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      [Type: e.g. Hospital]
+    </text>
+
+    <!-- Connecting lines from drivers to centre -->
+    <line x1="180" y1="120" x2="300" y2="240" stroke="#5D8156" stroke-width="1" stroke-dasharray="3,4" opacity="0.3"/>
+    <line x1="430" y1="140" x2="300" y2="240" stroke="#5D8156" stroke-width="1" stroke-dasharray="3,4" opacity="0.3"/>
+    <line x1="440" y1="280" x2="300" y2="240" stroke="#5D8156" stroke-width="1" stroke-dasharray="3,4" opacity="0.3"/>
+    <line x1="370" y1="380" x2="300" y2="240" stroke="#5D8156" stroke-width="1" stroke-dasharray="3,4" opacity="0.3"/>
+    <line x1="200" y1="360" x2="300" y2="240" stroke="#5D8156" stroke-width="1" stroke-dasharray="3,4" opacity="0.3"/>
+
+    <!-- Legend at bottom -->
+    <line x1="30" y1="450" x2="570" y2="450" stroke="#5D8156" stroke-width="1" opacity="0.2"/>
+    <circle cx="50" cy="470" r="5" fill="#5D8156"/>
+    <text x="65" y="475" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#5D8156" opacity="0.7">
+      Key demand driver
+    </text>
+    <text x="570" y="495" font-family="-apple-system, sans-serif" font-size="9" font-weight="600" fill="#5D8156" opacity="0.4" text-anchor="end">
+      Illustrative — not to scale
+    </text>
+
+  </svg>
+</div>
+
+
+<!-- ============================================================
+     VISUAL 2 — PROPERTY COMPARISON CARD
+     Position: BETWEEN services bullet list and FAQ section
+     Rules:
+       - Full-width header banner at top (y=0 to y=46)
+       - Left card x=0 to ~x=355
+       - Right card starts at x=361
+       - No element crosses the midpoint into the other card
+       - Footnote strip at the very bottom
+     ============================================================ -->
+
+<div class="sf-svg-wrap">
+  <svg viewBox="0 0 720 400"
+       xmlns="http://www.w3.org/2000/svg"
+       role="img"
+       aria-label="Comparison of property managed by Stayful vs. long-term tenancy in [City]">
+
+    <defs>
+      <filter id="ds3" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#5D8156" flood-opacity="0.15"/>
+      </filter>
+    </defs>
+
+    <!-- Full-width header banner -->
+    <rect x="0" y="0" width="720" height="46" fill="#5D8156"/>
+    <text x="360" y="29" font-family="-apple-system, sans-serif" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">
+      Comparable [bedroom count]-bed [property type] in [City]
+    </text>
+
+    <!-- Left card: long-term tenancy -->
+    <rect x="20" y="66" width="335" height="280" fill="#ffffff" rx="6" filter="url(#ds3)"/>
+    <text x="187" y="100" font-family="-apple-system, sans-serif" font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle" opacity="0.7" letter-spacing="0.06em">
+      LONG-TERM TENANCY
+    </text>
+    <text x="187" y="160" font-family="-apple-system, sans-serif" font-size="48" font-weight="800" fill="#5D8156" text-anchor="middle">
+      £[X]
+    </text>
+    <text x="187" y="185" font-family="-apple-system, sans-serif" font-size="13" font-weight="600" fill="#5D8156" text-anchor="middle">
+      per month, after costs
+    </text>
+    <line x1="60" y1="220" x2="315" y2="220" stroke="#5D8156" stroke-width="1" opacity="0.2"/>
+    <text x="187" y="245" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      Fixed annual income
+    </text>
+    <text x="187" y="265" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      12-month tenant commitment
+    </text>
+    <text x="187" y="285" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      Section 21 / Section 8 process if needed
+    </text>
+    <text x="187" y="310" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle" opacity="0.7">
+      No personal use of property
+    </text>
+
+    <!-- Right card: Stayful managed -->
+    <rect x="365" y="66" width="335" height="280" fill="#a8c9b8" rx="6" filter="url(#ds3)"/>
+    <text x="532" y="100" font-family="-apple-system, sans-serif" font-size="11" font-weight="700" fill="#5D8156" text-anchor="middle" opacity="0.7" letter-spacing="0.06em">
+      SHORT-TERM LETTING (STAYFUL)
+    </text>
+    <text x="532" y="160" font-family="-apple-system, sans-serif" font-size="48" font-weight="800" fill="#5D8156" text-anchor="middle">
+      £[Y]
+    </text>
+    <text x="532" y="185" font-family="-apple-system, sans-serif" font-size="13" font-weight="600" fill="#5D8156" text-anchor="middle">
+      typical monthly net, after fees + costs
+    </text>
+    <line x1="405" y1="220" x2="660" y2="220" stroke="#5D8156" stroke-width="1" opacity="0.2"/>
+    <text x="532" y="245" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle">
+      Rolling monthly — no fixed commitment
+    </text>
+    <text x="532" y="265" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle">
+      Block dates for personal use anytime
+    </text>
+    <text x="532" y="285" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle">
+      Income includes quiet-month range
+    </text>
+    <text x="532" y="310" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#5D8156" text-anchor="middle">
+      No tenants, no eviction risk
+    </text>
+
+    <!-- Footnote strip at bottom -->
+    <rect x="0" y="360" width="720" height="40" fill="#BAD6C7"/>
+    <text x="360" y="385" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#5D8156" text-anchor="middle">
+      Conservative figures · Based on [City] comparable property data · Real Stayful portfolio averages
+    </text>
+
+  </svg>
+</div>
+
+
+<!--
+  Notes:
+  - Every gradient/filter has a unique id (mapbg2, ds2, ds3) — duplicate
+    IDs across SVGs on the same page break rendering
+  - No emoji in SVG text elements
+  - SVG containers wrapped in .sf-svg-wrap (provides border + overflow control)
+  - Width:100%; height:auto; display:block on the svg element itself
+  - Total markup per SVG kept under ~200 lines per the CWV rule
+-->

@@ -1,0 +1,232 @@
+<!--
+  STAYFUL — Seasonality Bar Chart
+  CSS: HTML__css__brand-styles.css (inline supplement below)
+  Position: Zone 2 — Section 7 of canonical order, after income comparison panel
+  Rules: STAYFUL__brand__components-html-library.md
+  CWV: bar widths set via data-width attribute, animated on load via JS
+       (heights are explicit on bar tracks BEFORE JS runs)
+-->
+
+<style>
+  .sf-season {
+    background: #ffffff;
+    border: 1px solid rgba(93, 129, 86, 0.15);
+    padding: 26px 28px;
+    margin: 28px 0;
+  }
+  .sf-season-header {
+    margin-bottom: 18px;
+  }
+  .sf-season-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #5D8156;
+    margin: 0 0 6px;
+  }
+  .sf-season-desc {
+    font-size: 13px;
+    font-weight: 600;
+    color: #5D8156;
+    opacity: 0.7;
+    margin: 0;
+  }
+  .sf-season-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+  }
+  .sf-season-label {
+    width: 32px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #5D8156;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sf-season-track {
+    flex: 1;
+    height: 18px;
+    background: #BAD6C7;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .sf-season-fill {
+    height: 18px;
+    background: #5D8156;
+    width: 0;
+    transition: width 0.9s ease-out;
+  }
+  .sf-season-fill.is-animated {
+    width: var(--target-width, 0);
+  }
+  .sf-season-value {
+    width: 56px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #5D8156;
+    text-align: right;
+  }
+  .sf-season-legend {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(93, 129, 86, 0.15);
+    font-size: 12px;
+    font-weight: 600;
+    color: #5D8156;
+    opacity: 0.7;
+  }
+</style>
+
+
+<!-- ============================================================
+     SEASONALITY BAR CHART
+     12 months — replace each width and value with city-specific data
+     ============================================================ -->
+
+<div class="sf-season">
+
+  <div class="sf-season-header">
+    <h3 class="sf-season-title">[City] occupancy across the year</h3>
+    <p class="sf-season-desc">
+      Stayful-managed portfolio average. Conservative figures.
+    </p>
+  </div>
+
+  <div class="sf-season-row">
+    <span class="sf-season-label">Jan</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="42"></div></div>
+    <span class="sf-season-value">42%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Feb</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="51"></div></div>
+    <span class="sf-season-value">51%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Mar</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="60"></div></div>
+    <span class="sf-season-value">60%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Apr</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="68"></div></div>
+    <span class="sf-season-value">68%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">May</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="74"></div></div>
+    <span class="sf-season-value">74%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Jun</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="78"></div></div>
+    <span class="sf-season-value">78%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Jul</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="82"></div></div>
+    <span class="sf-season-value">82%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Aug</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="86"></div></div>
+    <span class="sf-season-value">86%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Sep</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="74"></div></div>
+    <span class="sf-season-value">74%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Oct</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="65"></div></div>
+    <span class="sf-season-value">65%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Nov</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="55"></div></div>
+    <span class="sf-season-value">55%</span>
+  </div>
+  <div class="sf-season-row">
+    <span class="sf-season-label">Dec</span>
+    <div class="sf-season-track"><div class="sf-season-fill" data-width="48"></div></div>
+    <span class="sf-season-value">48%</span>
+  </div>
+
+  <div class="sf-season-legend">
+    Each bar shows monthly occupancy for managed [City] properties.
+    Annual average: [annual avg]%.
+  </div>
+
+</div>
+
+
+<!-- ============================================================
+     LABELLED COMMENTARY PARAGRAPHS BELOW THE CHART
+     Standard labels: Seasonal range / Quietest month / Recovery pace / Owner example
+     ============================================================ -->
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Seasonal range
+  </span>
+  [City] occupancy ranges from [low]% in [month] to [high]% in [month] — typical for the region.
+</p>
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Quietest month
+  </span>
+  [Month] is the slowest month in [City]. A typical Stayful-managed property still nets
+  £[figure] in this month — above the long-let monthly figure of £[X].
+</p>
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Recovery pace
+  </span>
+  Occupancy recovers steadily from [low month] through [spring/event period],
+  reaching its annual peak in [month] driven by [named local demand event/season].
+</p>
+
+
+<!-- ============================================================
+     JAVASCRIPT — animate bar widths on load
+     CWV-compliant: pure CSS transitions, JS only adds class
+     ============================================================ -->
+
+<script>
+(function () {
+  function animateBars() {
+    document.querySelectorAll('.sf-season-fill').forEach(function (fill) {
+      var w = fill.getAttribute('data-width');
+      if (w) {
+        fill.style.setProperty('--target-width', w + '%');
+        // small delay so the transition is observable
+        requestAnimationFrame(function () {
+          fill.classList.add('is-animated');
+        });
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', animateBars);
+  } else {
+    animateBars();
+  }
+})();
+</script>
+
+
+<!--
+  Notes:
+  - Bar track height is explicit (18px) BEFORE JS runs — no CLS
+  - Fill width starts at 0 (CSS) and animates via --target-width custom prop
+  - 12 bars × ~3 lines each = ~36 lines of markup — within the 200-line SVG/complex-markup ceiling
+  - Always include three labelled commentary paragraphs minimum below the chart
+-->

@@ -1,0 +1,107 @@
+<!--
+  STAYFUL — CTA Blocks (Top + Bottom) + Answer Capsule
+  CSS: HTML__css__brand-styles.css
+  Rules:
+    - STAYFUL__cta__form-context-and-trust-cluster.md
+    - CORE__02_phase-2__canonical-section-order-and-html-additions.md (Section G — answer capsule)
+-->
+
+
+<!-- ============================================================
+     ANSWER CAPSULE (50-70 words exact)
+     Position: after 4-paragraph intro, before uplift component / top CTA
+     Rules: max 70 words, ends with pointer (not CTA), one specific data point
+     ============================================================ -->
+
+<div class="sf-answer">
+  <span class="sf-answer-label">Quick answer</span>
+  <p>
+    Short-term letting in [City] typically nets [X]% more per month than a
+    comparable long-let, after Stayful's 15% + VAT management fee and
+    operating costs. Conservative figures are based on actual enquiry data
+    from comparable [City] properties — including the quieter months.
+    The income comparison panel below shows the full breakdown for properties
+    similar to yours.
+  </p>
+</div>
+
+
+<!-- ============================================================
+     TOP CTA BLOCK
+     Position: after answer capsule, before income comparison panel
+     Includes the income estimate embed
+     ============================================================ -->
+
+<div class="cta-embed">
+  <span class="cta-embed-label">Free income estimate</span>
+  <span class="cta-embed-title">See what your [CITY] property could earn</span>
+  <span class="cta-embed-sub">Tailored to your postcode — no obligation, takes 2 minutes</span>
+  <div data-wm-plugin="load" data-source="/calculateyourincome-airbnb-management"></div>
+</div>
+
+
+<!-- ============================================================
+     CONTEXT AROUND TOP CTA — surrounding copy
+     Order: control reassurance (Objection 3) → form → income guarantee
+            statement (Objection 2) → trust cluster → payout timing → disqualifier
+     Full rules: STAYFUL__cta__form-context-and-trust-cluster.md
+     ============================================================ -->
+
+<!-- BEFORE the form embed (control reassurance) -->
+<p>
+  You block dates you want to use the property in your owner calendar —
+  no notice required, no approval process. And unlike a long-term tenancy,
+  no guest has exclusive possession of your property.
+</p>
+
+<!-- Form embed goes here (see CTA block above) -->
+
+<!-- AFTER the form embed (income guarantee statement) -->
+<p>
+  We don't guarantee a fixed income figure — and we'd be cautious of any
+  company that does. What we show you is the realistic range, including
+  quieter months, based on comparable properties in your postcode.
+  Even in a slower year, the net figure typically exceeds what a long-term
+  tenancy would pay.
+</p>
+
+<!-- Trust cluster (4.8 stars + payout timing) -->
+<div class="sf-callout">
+  <span class="sf-callout-label">TRUST</span>
+  <div class="sf-callout-text">
+    4.8 stars on Google · Monthly income paid directly to you between the 1st and 5th of each month.
+  </div>
+</div>
+
+<!-- Disqualifier (qualifies the click) -->
+<p style="font-size:14px; opacity:0.8; font-style:italic;">
+  If you need a guaranteed fixed amount each month regardless of bookings,
+  short letting may not be the right fit.
+</p>
+
+
+<!-- ============================================================
+     BOTTOM CTA BLOCK
+     Position: end of page (Section 19 of canonical order)
+     ============================================================ -->
+
+<div class="cta-bottom">
+  <h2>[Compelling headline for this city/topic]</h2>
+  <p>The estimate shows you what your [City] property typically earns — including the quieter months.</p>
+  <div data-wm-plugin="load" data-source="/calculateyourincome-airbnb-management"></div>
+</div>
+
+
+<!--
+  Compelling headline examples:
+  - "Run the numbers on your [city] property"
+  - "See what [city] short-letting could pay your property"
+  - "Get the honest figure for your [city] property"
+
+  Notes:
+  - Top CTA embed and bottom CTA embed are the SAME data-source
+  - Top CTA has more surrounding context (objection statements, trust cluster)
+  - Bottom CTA is leaner — the page has done its work; this is the final ask
+  - Uplift component (if present) sits BETWEEN answer capsule and top CTA,
+    not inside this block. See HTML__components__uplift-component.html
+-->

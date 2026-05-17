@@ -1,0 +1,129 @@
+<!--
+  STAYFUL — "How It Works" (4 steps) + "How Stayful Compares" (8-row table)
+  CSS: HTML__css__brand-styles.css
+  Position:
+    - How It Works: Zone 2, Section 8 of canonical order
+    - Compare Table: Zone 2, Section 10 of canonical order
+  Rules: STAYFUL__phase-2-sections__stayful-specific-html.md (Sections H + I)
+-->
+
+
+<!-- ============================================================
+     "HOW IT WORKS" — exactly 4 steps, always
+     Mobile (560px): grid-template-columns: 1fr (stacks)
+     ============================================================ -->
+
+<div class="sf-howitworks">
+
+  <div class="sf-howitworks-step">
+    <div class="sf-howitworks-num">1</div>
+    <div class="sf-howitworks-title">Request your free income estimate</div>
+    <div class="sf-howitworks-detail">Takes 2 minutes — your postcode and bedroom count</div>
+  </div>
+
+  <div class="sf-howitworks-step">
+    <div class="sf-howitworks-num">2</div>
+    <div class="sf-howitworks-title">Onboarding call</div>
+    <div class="sf-howitworks-detail">We walk through your [City] property</div>
+  </div>
+
+  <div class="sf-howitworks-step">
+    <div class="sf-howitworks-num">3</div>
+    <div class="sf-howitworks-title">Photography and listing setup</div>
+    <div class="sf-howitworks-detail">Professionally listed on all platforms in 7–14 days</div>
+  </div>
+
+  <div class="sf-howitworks-step">
+    <div class="sf-howitworks-num">4</div>
+    <div class="sf-howitworks-title">First booking</div>
+    <div class="sf-howitworks-detail">Income starts</div>
+  </div>
+
+</div>
+
+
+<!-- ============================================================
+     "HOW STAYFUL COMPARES" TABLE
+     - Three columns: Feature / Stayful / Alternative
+     - Exactly 8 rows
+     - NEVER name a specific competitor — use generic descriptor
+     ============================================================ -->
+
+<table class="sf-compare-table">
+
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th>Stayful</th>
+      <th>Typical local agent</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Management fee</td>
+      <td class="is-stayful">15% + VAT</td>
+      <td>18–25% + VAT</td>
+    </tr>
+    <tr>
+      <td>Setup fee</td>
+      <td class="is-stayful">£0 — none ever</td>
+      <td>£200–£500</td>
+    </tr>
+    <tr>
+      <td>Platforms listed on</td>
+      <td class="is-stayful">5 (Airbnb, Booking.com, VRBO, Google, Stayful direct)</td>
+      <td>1–2 (usually Airbnb only)</td>
+    </tr>
+    <tr>
+      <td>Dynamic pricing</td>
+      <td class="is-stayful">Daily algorithmic</td>
+      <td>Manual or weekly</td>
+    </tr>
+    <tr>
+      <td>24/7 guest communication</td>
+      <td class="is-stayful">Yes</td>
+      <td>Office hours only</td>
+    </tr>
+    <tr>
+      <td>Direct booking channel</td>
+      <td class="is-stayful">40% of bookings</td>
+      <td>Under 10%</td>
+    </tr>
+    <tr>
+      <td>Owner reporting</td>
+      <td class="is-stayful">Monthly statements, real-time dashboard</td>
+      <td>Quarterly summary</td>
+    </tr>
+    <tr>
+      <td>Contract length</td>
+      <td class="is-stayful">Rolling monthly</td>
+      <td>12-month minimum typical</td>
+    </tr>
+  </tbody>
+
+</table>
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Source
+  </span>
+  Stayful figures from current portfolio. "Typical local agent" figures from
+  Stayful's switching-customer conversations and publicly available competitor pages.
+</p>
+
+
+<!--
+  Notes:
+  - The 8 rows are FIXED. Do not add, remove, or reorder.
+  - Never use a specific competitor brand name. "Typical local agent" or
+    "National platform model" are the only acceptable alternatives.
+  - For the National platform model variant, swap the table values:
+      - Management fee: 20–25%
+      - Direct booking channel: 0% (platform routes everything)
+      - 24/7 guest communication: Outsourced or chatbot
+      - etc.
+  - Mobile (560px): the table becomes horizontally scrollable per the
+    .sf-compare-table media query in HTML__css__brand-styles.css
+-->

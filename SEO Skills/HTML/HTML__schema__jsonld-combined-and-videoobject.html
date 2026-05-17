@@ -1,0 +1,158 @@
+<!--
+  STAYFUL — Combined JSON-LD Schema Block
+  Rules: CORE__02_phase-2__schema-rules.md
+  Position: VERY LAST in HTML source order (after all visible content)
+
+  CRITICAL: Single combined array in one <script> block.
+  NEVER split across multiple <script> tags.
+-->
+
+
+<script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "name": "Airbnb Management in [City]",
+    "serviceType": "Airbnb Management",
+    "provider": {
+      "@type": "Organization",
+      "name": "Stayful",
+      "url": "https://www.stayful.co.uk"
+    },
+    "areaServed": [
+      { "@type": "City", "name": "[City]" },
+      { "@type": "AdministrativeArea", "name": "[County]" },
+      { "@type": "PostalCode", "postalCode": "[Primary postcode]" }
+    ],
+    "offers": {
+      "@type": "Offer",
+      "priceSpecification": {
+        "@type": "PriceSpecification",
+        "price": "15% + VAT — no setup fee"
+      }
+    }
+  },
+
+  {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "name": "Stayful",
+    "url": "https://www.stayful.co.uk",
+    "telephone": "0113 479 0251",
+    "areaServed": [
+      { "@type": "City", "name": "[City]" },
+      { "@type": "AdministrativeArea", "name": "[County]" },
+      { "@type": "PostalCode", "postalCode": "[Primary postcode]" }
+    ],
+    "priceRange": "££",
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.8",
+      "bestRating": "5"
+    }
+  },
+
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://www.stayful.co.uk"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Airbnb Management",
+        "item": "https://www.stayful.co.uk/airbnb-management"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": "[City]",
+        "item": "https://www.stayful.co.uk/airbnb-management-[city-slug]"
+      }
+    ]
+  },
+
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "[Verbatim FAQ question 1 — must match visible trigger text]",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "[Visible answer text 1]"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "[Verbatim FAQ question 2]",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "[Visible answer text 2]"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "[Verbatim FAQ question 3]",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "[Visible answer text 3]"
+        }
+      }
+      /* Add one mainEntity entry per visible FAQ item */
+    ]
+  },
+
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "[Exact meta title]",
+    "url": "https://www.stayful.co.uk/airbnb-management-[city-slug]",
+    "description": "[Same or similar to meta description]",
+    "dateModified": "[YYYY-MM-DD — today's date when published or refreshed]"
+  }
+
+  /* IF VIDEO PRESENT — add VideoObject as 6th item in the array:
+
+  ,{
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    "name": "[Descriptive video title matching page topic]",
+    "description": "[1-2 sentence summary of what the video covers]",
+    "thumbnailUrl": "[Full URL to thumbnail image]",
+    "uploadDate": "[YYYY-MM-DD]",
+    "contentUrl": "[Video file URL — OR use embedUrl below instead]",
+    "embedUrl": "[Embed URL — OR use contentUrl above instead]",
+    "duration": "PT2M30S"
+  }
+
+  */
+]
+</script>
+
+
+<!--
+  CHECKLIST BEFORE PUBLISHING:
+
+  - [ ] Single <script type="application/ld+json"> block (not multiple)
+  - [ ] All 5 schema types included (Service, LocalBusiness, BreadcrumbList, FAQPage, WebPage)
+  - [ ] VideoObject included if video is present on page
+  - [ ] City, county, and primary postcode filled in for areaServed
+  - [ ] BreadcrumbList positions are sequential integers starting at 1
+  - [ ] FAQ mainEntity count matches visible FAQ count exactly
+  - [ ] FAQ question text VERBATIM matches visible trigger text
+  - [ ] FAQ answer text matches visible answer text
+  - [ ] dateModified is today's date in YYYY-MM-DD format
+  - [ ] reviewCount only included if a real verified number is known (not fabricated)
+  - [ ] No placeholder text or [PLACEHOLDER] tokens left in production
+  - [ ] Validates in Google's Rich Results Test
+
+  REFERENCE: CORE__02_phase-2__schema-rules.md
+-->
