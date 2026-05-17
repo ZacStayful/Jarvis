@@ -1,147 +1,58 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import JarvisEye from "@/components/JarvisEye";
 import ChatInterface from "@/components/ChatInterface";
 import StatusBar from "@/components/StatusBar";
+import { useJARVIS, type Message as HookMessage, type JARVISState } from "@/hooks/useJARVIS";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 import styles from "./page.module.css";
 
-export type JarvisState = "idle" | "listening" | "thinking" | "speaking";
-
-export interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
+export type JarvisState = JARVISState;
+export type Message = HookMessage;
 
 export default function JarvisPage() {
-  const [jarvisState, setJarvisState] = useState<JarvisState>("idle");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [bootComplete, setBootComplete] = useState(false);
   const router = useRouter();
-  const messagesRef = useRef<Message[]>([]);
 
-  // Keep ref in sync
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  const {
+    messages,
+    jarvisState,
+    isLoading,
+    sendMessage,
+    setMessages,
+  } = useJARVIS();
 
-  // Boot sequence
+  const {
+    startListening,
+    stopListening,
+    isListening,
+    partialTranscript,
+    voiceState,
+  } = useVoiceInput({
+    onFinalTranscript: (text) => sendMessage(text),
+  });
+
+  // Boot sequence + welcome
   useEffect(() => {
     const timer = setTimeout(() => {
       setBootComplete(true);
-      // Welcome message
-      const welcome: Message = {
-        id: "welcome",
-        role: "assistant",
-        content:
-          "Good to have you back, Zac. Systems are online. What do you need?",
-        timestamp: new Date(),
-      };
-      setMessages([welcome]);
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content:
+            "Good to have you back, Zac. Systems are online. What do you need?",
+          timestamp: new Date(),
+        },
+      ]);
     }, 1200);
     return () => clearTimeout(timer);
-  }, []);
+  }, [setMessages]);
 
-  const sendMessage = useCallback(
-    async (content: string) => {
-      if (isStreaming || !content.trim()) return;
-
-      const userMsg: Message = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        content: content.trim(),
-        timestamp: new Date(),
-      };
-
-      const updatedMessages = [...messagesRef.current, userMsg];
-      setMessages(updatedMessages);
-      setJarvisState("thinking");
-      setIsStreaming(true);
-
-      // Prepare assistant message placeholder
-      const assistantMsgId = `assistant-${Date.now()}`;
-      const assistantMsg: Message = {
-        id: assistantMsgId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: updatedMessages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-          }),
-        });
-
-        if (!res.ok) throw new Error("API error");
-
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (!reader) throw new Error("No reader");
-
-        setJarvisState("speaking");
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.text) {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? { ...m, content: m.content + data.text }
-                        : m
-                    )
-                  );
-                }
-                if (data.done || data.error) break;
-              } catch {
-                // ignore parse errors
-              }
-            }
-          }
-        }
-      } catch (error) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  content:
-                    "I encountered an error processing that request. Please try again.",
-                }
-              : m
-          )
-        );
-      } finally {
-        setJarvisState("idle");
-        setIsStreaming(false);
-      }
-    },
-    [isStreaming]
-  );
+  // Combined visual state: voice listening overrides JARVIS state
+  const displayState: JarvisState = isListening ? "listening" : jarvisState;
 
   const handleLogout = async () => {
     await fetch("/api/auth", { method: "DELETE" });
@@ -150,11 +61,9 @@ export default function JarvisPage() {
 
   return (
     <div className={`${styles.container} ${bootComplete ? styles.booted : ""}`}>
-      {/* Background elements */}
       <div className={styles.bgGrid} />
       <div className={styles.bgVignette} />
 
-      {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <span className={styles.headerBrand}>JARVIS</span>
@@ -162,13 +71,13 @@ export default function JarvisPage() {
         </div>
         <div className={styles.headerRight}>
           <div
-            className={`${styles.statusDot} ${jarvisState !== "idle" ? styles.statusDotActive : ""}`}
+            className={`${styles.statusDot} ${displayState !== "idle" ? styles.statusDotActive : ""}`}
           />
           <span className={styles.statusLabel}>
-            {jarvisState === "idle" && "STANDBY"}
-            {jarvisState === "listening" && "LISTENING"}
-            {jarvisState === "thinking" && "PROCESSING"}
-            {jarvisState === "speaking" && "RESPONDING"}
+            {displayState === "idle" && "STANDBY"}
+            {displayState === "listening" && "LISTENING"}
+            {displayState === "thinking" && "PROCESSING"}
+            {displayState === "speaking" && "RESPONDING"}
           </span>
           <button className={styles.logoutBtn} onClick={handleLogout}>
             DISCONNECT
@@ -176,16 +85,13 @@ export default function JarvisPage() {
         </div>
       </header>
 
-      {/* Main layout */}
       <main className={styles.main}>
-        {/* Eye column */}
         <div className={styles.eyeColumn}>
-          <JarvisEye state={jarvisState} />
+          <JarvisEye state={displayState} />
 
-          {/* System status indicators */}
           <div className={styles.systemStatus}>
             <StatusItem label="CLAUDE API" status="online" />
-            <StatusItem label="VOICE IN" status="phase2" />
+            <StatusItem label="VOICE IN" status="online" />
             <StatusItem label="VOICE OUT" status="phase2" />
             <StatusItem label="MONDAY.COM" status="phase4" />
             <StatusItem label="GMAIL" status="phase4" />
@@ -193,19 +99,21 @@ export default function JarvisPage() {
           </div>
         </div>
 
-        {/* Chat column */}
         <div className={styles.chatColumn}>
           <ChatInterface
             messages={messages}
             onSendMessage={sendMessage}
-            isStreaming={isStreaming}
-            jarvisState={jarvisState}
+            isStreaming={isLoading}
+            jarvisState={displayState}
+            isListening={isListening}
+            partialTranscript={partialTranscript}
+            voiceState={voiceState}
+            onToggleVoice={isListening ? stopListening : startListening}
           />
         </div>
       </main>
 
-      {/* Status bar */}
-      <StatusBar jarvisState={jarvisState} messageCount={messages.length} />
+      <StatusBar jarvisState={displayState} messageCount={messages.length} />
     </div>
   );
 }

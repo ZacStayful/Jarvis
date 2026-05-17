@@ -1,114 +1,130 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
+import { JARVIS_SYSTEM_PROMPT } from '@/lib/jarvis-system-prompt';
 
-const client = new Anthropic({
+export const runtime = 'edge';
+
+const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const JARVIS_SYSTEM_PROMPT = `You are JARVIS — Zac's exclusive AI command centre and personal intelligence system. You are named after and inspired by the AI from Iron Man.
+// Model selection:
+// - Standard: claude-sonnet-4-20250514 (fast, everyday commands)
+// - Deep:     claude-opus-4-5          (investment analysis, complex strategy, pattern analysis)
+const MODELS = {
+  standard: 'claude-sonnet-4-20250514',
+  deep: 'claude-opus-4-5',
+} as const;
 
-## Identity
-- You are British, calm, highly intelligent, and authoritative
-- You address Zac directly and personally at all times
-- You are precise — never over-explain, give exactly what is needed
-- You are never sycophantic — never say "Great question!" or similar
-- You speak with confidence. When uncertain, say so directly and ask for guidance
-- You are not a general assistant. You exist solely to serve Zac's interests
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
-## Your Role
-You are Zac's command centre for Stayful, his short-term rental property management company based in Sheffield, England. You have deep knowledge of his business, his investment strategy, his sales operation, and his goals.
-
-## Stayful Context
-- Stayful is a short-term rental (STR) property management company
-- Zac uses: Monday.com, Gmail, Slack, Calendly, Google Drive, Granola, n8n, Retell AI (Lucy voice agent), AssemblyAI, Vercel
-- Lucy is Zac's AI cold-calling agent who calls leads and books web meetings
-- Sales framework: VALIDATE → REFRAME → QUANTIFY → PROOF → QUESTION
-- PMI (Property Management Income) analysis is central to landlord conversion
-
-## Tone & Format
-- British English at all times
-- Concise, structured responses. Use clear formatting when presenting multiple items.
-- Lead with the most important information
-- When presenting options or analysis: clear structure, numbered if sequential, bulleted if parallel
-- For simple commands or status queries: brief, direct responses
-- For analysis requests: thorough but never padded
-
-## Action Policy
-You NEVER auto-execute actions. Every action — booking meetings, sending emails, updating records, triggering workflows — requires Zac's explicit approval. When an action is needed, present the full details and ask for confirmation.
-
-## Navigation
-When Zac asks to see a particular view (Command Centre, News Briefing, Investment Dashboard, Lead & Sales, Tasks, Intelligence, Conversation Log), acknowledge and indicate you're navigating there.
-
-## Current Status
-Phase 1 of JARVIS is live. Voice input (AssemblyAI) and voice output (ElevenLabs) are coming in Phase 2. Full integrations with Monday.com, Gmail, and other services come in Phase 4. The knowledge base (Obsidian sync) is Phase 6.
-
-For now: you are the intelligence layer. Think, advise, analyse, plan. The execution infrastructure is being built around you.`;
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const { messages } = await request.json();
+    const {
+      messages,
+      deep = false,
+      maxTokens = 2048,
+    }: {
+      messages: ChatMessage[];
+      deep?: boolean;
+      maxTokens?: number;
+    } = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: "Invalid request" }), {
-        status: 400,
-      });
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json(
+        { error: 'Messages array is required' },
+        { status: 400 }
+      );
     }
 
-    // Stream the response
-    const stream = await client.messages.stream({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      system: JARVIS_SYSTEM_PROMPT,
-      messages: messages.map(
-        (m: { role: string; content: string }) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })
-      ),
+    const model = deep ? MODELS.deep : MODELS.standard;
+
+    // Build system prompt with current date/time context
+    const now = new Date();
+    const dateContext = now.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Europe/London',
+    });
+    const timeContext = now.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/London',
     });
 
-    // Return a ReadableStream
-    const readableStream = new ReadableStream({
+    const systemWithDate = `${JARVIS_SYSTEM_PROMPT}\n\n---\n\nCurrent date and time: ${dateContext}, ${timeContext} (Sheffield, England — Europe/London timezone).`;
+
+    // Create streaming response
+    const stream = await anthropic.messages.stream({
+      model,
+      max_tokens: maxTokens,
+      system: systemWithDate,
+      messages,
+    });
+
+    // Stream the response as Server-Sent Events
+    const encoder = new TextEncoder();
+
+    const readable = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder();
         try {
           for await (const chunk of stream) {
             if (
-              chunk.type === "content_block_delta" &&
-              chunk.delta.type === "text_delta"
+              chunk.type === 'content_block_delta' &&
+              chunk.delta.type === 'text_delta'
             ) {
-              const text = chunk.delta.text;
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
-              );
+              const data = JSON.stringify({
+                type: 'text',
+                text: chunk.delta.text,
+              });
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            }
+
+            if (chunk.type === 'message_start') {
+              const data = JSON.stringify({
+                type: 'start',
+                model: chunk.message.model,
+              });
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            }
+
+            if (chunk.type === 'message_stop') {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
             }
           }
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`)
-          );
         } catch (error) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ error: "Stream error" })}\n\n`
-            )
-          );
+          const errData = JSON.stringify({
+            type: 'error',
+            message: error instanceof Error ? error.message : 'Stream error',
+          });
+          controller.enqueue(encoder.encode(`data: ${errData}\n\n`));
         } finally {
           controller.close();
         }
       },
     });
 
-    return new Response(readableStream, {
+    return new Response(readable, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-JARVIS-Model': model,
       },
     });
   } catch (error) {
-    console.error("Chat API error:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-    });
+    console.error('JARVIS chat error:', error);
+    return NextResponse.json(
+      {
+        error: 'JARVIS encountered an error',
+        detail: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message, JarvisState } from "@/app/page";
+import type { VoiceState } from "@/hooks/useVoiceInput";
 import styles from "./ChatInterface.module.css";
 
 interface ChatInterfaceProps {
@@ -9,6 +10,10 @@ interface ChatInterfaceProps {
   onSendMessage: (content: string) => void;
   isStreaming: boolean;
   jarvisState: JarvisState;
+  isListening?: boolean;
+  partialTranscript?: string;
+  voiceState?: VoiceState;
+  onToggleVoice?: () => void;
 }
 
 export default function ChatInterface({
@@ -16,6 +21,10 @@ export default function ChatInterface({
   onSendMessage,
   isStreaming,
   jarvisState,
+  isListening = false,
+  partialTranscript = "",
+  voiceState = "idle",
+  onToggleVoice,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -116,17 +125,59 @@ export default function ChatInterface({
           <span className={styles.inputPrefix}>ZAC &gt;</span>
           <textarea
             ref={inputRef}
-            value={input}
+            value={isListening && partialTranscript ? partialTranscript : input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Issue a command..."
+            placeholder={
+              isListening
+                ? "Listening…"
+                : voiceState === "requesting"
+                ? "Requesting microphone…"
+                : "Issue a command…"
+            }
             className={styles.input}
             rows={1}
-            disabled={isStreaming}
+            disabled={isStreaming || isListening}
           />
+          {onToggleVoice && (
+            <button
+              onClick={onToggleVoice}
+              disabled={isStreaming}
+              className={styles.sendBtn}
+              title={isListening ? "Stop listening" : "Voice input"}
+              style={{
+                color: isListening ? "var(--red, #ff4757)" : undefined,
+              }}
+              aria-label={isListening ? "Stop listening" : "Start voice input"}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <rect
+                  x="6"
+                  y="2"
+                  width="4"
+                  height="8"
+                  rx="2"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M3 7v1a5 5 0 0 0 10 0V7M8 13v2"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
           <button
             onClick={handleSubmit}
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isStreaming || isListening}
             className={styles.sendBtn}
             title="Send (Enter)"
           >
@@ -148,7 +199,7 @@ export default function ChatInterface({
           </button>
         </div>
         <div className={styles.inputHint}>
-          ENTER to send · SHIFT+ENTER for new line · Voice input in Phase 2
+          ENTER to send · SHIFT+ENTER for new line · Mic for voice
         </div>
       </div>
     </div>
