@@ -1,0 +1,112 @@
+<!--
+  STAYFUL — FAQ Accordion + Accordion Section
+  CSS: HTML__css__brand-styles.css
+  Rules: STAYFUL__faq__lead-language-tables.md + CORE__04_frameworks__objections-and-faq-language-framework.md
+  Schema integration: CORE__02_phase-2__schema-rules.md
+-->
+
+
+<!-- ============================================================
+     FAQ ACCORDION
+     Position: late in page (Zone 3 — commitment)
+     Each item includes schema.org Question markup
+     Click handler at bottom of file
+     ============================================================ -->
+
+<div class="sf-faq">
+
+  <div class="sf-faq-item" itemscope itemtype="https://schema.org/Question">
+    <button class="sf-faq-trigger" aria-expanded="false">
+      <span itemprop="name">[Verbatim PAA question or lead-language question]</span>
+      <svg class="sf-faq-chevron" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M3 5l4 4 4-4" stroke="#5D8156" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="sf-faq-content" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer">
+      <div class="sf-faq-answer" itemprop="text">
+        [Direct answer first sentence — no "Great question" affirmations.]
+
+        [Mechanism or context sentence.]
+
+        [Optional caveat or further context.]
+      </div>
+    </div>
+  </div>
+
+  <div class="sf-faq-item" itemscope itemtype="https://schema.org/Question">
+    <button class="sf-faq-trigger" aria-expanded="false">
+      <span itemprop="name">[Next FAQ question]</span>
+      <svg class="sf-faq-chevron" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M3 5l4 4 4-4" stroke="#5D8156" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="sf-faq-content" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer">
+      <div class="sf-faq-answer" itemprop="text">
+        [Answer text.]
+      </div>
+    </div>
+  </div>
+
+  <!-- Repeat for each FAQ item -->
+
+</div>
+
+
+<!-- ============================================================
+     ACCORDION SECTION (for long-form body content over 75 words)
+     Position: anywhere content needs an accordion
+     ============================================================ -->
+
+<div class="sf-accordion">
+  <button class="sf-accordion-trigger" aria-expanded="false">
+    [Accordion section heading — should be a hook, not a label]
+    <svg class="sf-faq-chevron" viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M3 5l4 4 4-4" stroke="#5D8156" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <div class="sf-accordion-content">
+    <div style="padding: 8px 0 20px;">
+      <p>[Body content paragraph 1 — one sentence per p tag.]</p>
+      <p>[Body content paragraph 2.]</p>
+      <p>[Body content paragraph 3.]</p>
+
+      <!-- Optional: nested data visuals, bullet lists, callouts -->
+    </div>
+  </div>
+</div>
+
+
+<!-- ============================================================
+     JAVASCRIPT — accordion + FAQ click handlers
+     Lightweight: CSS handles transitions; JS only toggles class
+     ============================================================ -->
+
+<script>
+(function () {
+  function setupAccordion(selector, contentSelector) {
+    document.querySelectorAll(selector).forEach(function (item) {
+      var trigger = item.querySelector('button');
+      if (!trigger) return;
+      trigger.addEventListener('click', function () {
+        var isOpen = item.classList.toggle('is-open');
+        trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+    });
+  }
+
+  setupAccordion('.sf-faq-item', '.sf-faq-content');
+  setupAccordion('.sf-accordion', '.sf-accordion-content');
+})();
+</script>
+
+
+<!--
+  Notes on the FAQ accordion:
+  - FAQ items must use schema.org Question / Answer markup so they
+    parse cleanly even if the JSON-LD FAQPage block is missed.
+  - Visible question text in <span itemprop="name"> must match
+    verbatim the question text in the FAQPage schema mainEntity.
+  - "Great question" / "Thanks for asking" / "We're glad you asked"
+    NEVER appear at the start of any answer.
+  - Each FAQ uses lead-language phrasing (STAYFUL__faq__lead-language-tables.md)
+-->

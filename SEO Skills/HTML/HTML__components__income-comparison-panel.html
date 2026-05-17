@@ -1,0 +1,78 @@
+<!--
+  STAYFUL — Income Comparison Panel
+  CSS: HTML__css__brand-styles.css
+  Position: Zone 2 (credibility) — Section 6 of canonical order
+  Rules: STAYFUL__brand__components-html-library.md
+-->
+
+
+<!-- ============================================================
+     INCOME COMPARISON PANEL
+     Two-column grid: LTR (white) vs STR (#a8c9b8)
+     Followed by green difference bar
+     ============================================================ -->
+
+<div class="sf-compare-panel">
+
+  <!-- Two cards side by side -->
+  <div class="sf-compare-grid">
+    <div class="sf-compare-cell is-ltr">
+      <span class="sf-compare-cell-label">Long-term tenancy</span>
+      <span class="sf-compare-cell-figure">£[X]</span>
+      <span class="sf-compare-cell-period">per month, after costs</span>
+    </div>
+    <div class="sf-compare-cell is-str">
+      <span class="sf-compare-cell-label">Short-term letting (Stayful)</span>
+      <span class="sf-compare-cell-figure">£[Y]</span>
+      <span class="sf-compare-cell-period">typical monthly net, after fees and costs</span>
+    </div>
+  </div>
+
+  <!-- Difference bar -->
+  <div class="sf-compare-difference">
+    [Z]% more per month — conservative comparison based on [City] data
+  </div>
+
+</div>
+
+<!-- Labelled commentary paragraphs follow the panel -->
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Source
+  </span>
+  Based on enquiry data from comparable [bedroom count]-bed properties in [postcode area / city area].
+  Stayful's managed portfolio occupancy averages 65–70% vs. the AirDNA market average of 55%.
+</p>
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Quietest month
+  </span>
+  In a slower year, this type of property in [City] typically nets £[worst-case figure] per month.
+  A comparable long-term tenancy would pay £[X]. Even in the quieter period, short-term letting
+  typically remains the stronger financial outcome.
+</p>
+
+<p>
+  <span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase;
+               letter-spacing:0.08em; color:#5D8156; opacity:0.55; margin-bottom:4px;">
+    Structural reassurance
+  </span>
+  Below-market performance would require two things to fail at once: the pricing and occupancy
+  expertise we apply to every property, and the direct booking channel that currently accounts
+  for 40% of our bookings.
+</p>
+
+
+<!--
+  Notes:
+  - Always show LTR and STR alongside each other — never STR in isolation
+  - Always show typical AND quietest-month figures
+  - Always follow worst-case with the structural reassurance paragraph
+  - The structural reassurance text is EXACT — do not paraphrase
+  - Mobile: the .sf-compare-grid stacks at 560px (1fr instead of 2 cols)
+  - The figures should come from STAYFUL__postcode-data__regional-reference-table.md
+-->
