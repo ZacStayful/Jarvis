@@ -1,0 +1,22 @@
+{
+  "total_urls": 669,
+  "by_changefreq": {
+    "daily": 574,
+    "monthly": 95
+  },
+  "by_priority": {
+    "0.75": 573,
+    "0.5": 95,
+    "1.0": 1
+  },
+  "by_lastmod_year": {
+    "2026": 446,
+    "2025": 190,
+    "2024": 31,
+    "": 2
+  },
+  "image_count_total": 10170,
+  "image_count_mean": 15.2,
+  "image_count_max": 80,
+  "pages_with_zero_images": 314
+}
