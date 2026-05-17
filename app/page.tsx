@@ -14,10 +14,13 @@ import {
   Send,
   TrendingUp,
   Users,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
 import { useJARVIS, type JARVISState, type Message } from "@/hooks/useJARVIS";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useTTS } from "@/hooks/useTTS";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
@@ -54,8 +57,11 @@ export default function JarvisPage() {
 
   const { messages, jarvisState, isLoading, sendMessage, setMessages } = useJARVIS();
 
+  const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
+
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
+      stopSpeaking();
       const route = routeCommand(text);
       if (route) setActiveView(route);
       sendMessage(text);
@@ -63,7 +69,30 @@ export default function JarvisPage() {
   });
 
   // Combined visual state
-  const state: JARVISState = isListening ? "listening" : jarvisState;
+  const state: JARVISState = isListening
+    ? "listening"
+    : isSpeaking
+    ? "speaking"
+    : jarvisState;
+
+  // Track which message ids have already been spoken
+  const spokenIdsRef = useRef<Set<string>>(new Set(["welcome"]));
+
+  // Speak newly completed assistant messages
+  useEffect(() => {
+    if (muted) return;
+    const latest = messages[messages.length - 1];
+    if (
+      latest &&
+      latest.role === "assistant" &&
+      !latest.isStreaming &&
+      latest.content.trim() &&
+      !spokenIdsRef.current.has(latest.id)
+    ) {
+      spokenIdsRef.current.add(latest.id);
+      speak(latest.content);
+    }
+  }, [messages, muted, speak]);
 
   // Welcome message on first mount
   useEffect(() => {
@@ -87,6 +116,7 @@ export default function JarvisPage() {
     const txt = input.trim();
     if (!txt || isLoading) return;
     setInput("");
+    stopSpeaking();
     const route = routeCommand(txt);
     if (route) setActiveView(route);
     sendMessage(txt);
@@ -134,6 +164,8 @@ export default function JarvisPage() {
         activeView={activeView}
         onNavBack={() => setActiveView(null)}
         onLogout={handleLogout}
+        muted={muted}
+        onToggleMuted={toggleMuted}
       />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
@@ -172,11 +204,15 @@ function Header({
   activeView,
   onNavBack,
   onLogout,
+  muted,
+  onToggleMuted,
 }: {
   state: JARVISState;
   activeView: ViewId | null;
   onNavBack: () => void;
   onLogout: () => void;
+  muted: boolean;
+  onToggleMuted: () => void;
 }) {
   const [time, setTime] = useState("");
   useEffect(() => {
@@ -277,6 +313,23 @@ function Header({
         >
           {time}
         </span>
+        <button
+          onClick={onToggleMuted}
+          title={muted ? "Unmute voice" : "Mute voice"}
+          aria-label={muted ? "Unmute voice" : "Mute voice"}
+          style={{
+            background: "none",
+            border: `1px solid ${muted ? C.border : C.primary + "66"}`,
+            color: muted ? C.textLow : C.bright,
+            padding: "3px 6px",
+            borderRadius: 4,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+        </button>
         <button
           onClick={onLogout}
           className="mono"
