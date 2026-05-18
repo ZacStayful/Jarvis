@@ -23,6 +23,7 @@ import { useJARVIS } from "@/hooks/useJARVIS";
 import { useCrossSessionContext } from "@/hooks/useCrossSessionContext";
 import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useTTS } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
@@ -66,21 +67,11 @@ export default function JarvisPage() {
   const [input, setInput] = useState("");
   const feedRef = useRef<HTMLDivElement | null>(null);
 
-  // Phase 8 — local mute toggle (persists across reloads), drives voiceEnabled
-  const [muted, setMuted] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setMuted(window.localStorage.getItem("jarvis_tts_muted") === "true");
-  }, []);
-  const toggleMuted = () => {
-    setMuted((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("jarvis_tts_muted", String(next));
-      }
-      return next;
-    });
-  };
+  // Voice output — using the working Phase 2 `/api/speak` server proxy.
+  // Phase 8's client-side ElevenLabs streaming is intentionally disabled
+  // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
+  // ElevenLabs env vars are added in Vercel.
+  const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
   // Phase 8 — load cross-session context block to inject into the system prompt
   const crossSession = useCrossSessionContext();
@@ -93,8 +84,6 @@ export default function JarvisPage() {
     sendMessage,
     approveAction,
     denyAction,
-    isSpeaking,
-    stopSpeaking,
     endSession,
   } = useJARVIS({
     onRoute: (view, params) => {
@@ -102,7 +91,8 @@ export default function JarvisPage() {
       if (params) setViewParams(params);
     },
     crossSessionContext: crossSessionBlock,
-    voiceEnabled: !muted,
+    // Disable Phase 8 client-streaming voice — we use the server proxy below
+    voiceEnabled: false,
     persistSession: true,
   });
 
@@ -114,6 +104,42 @@ export default function JarvisPage() {
 
   // Phase 7 — Lucy intelligence centre
   const [lucyOpen, setLucyOpen] = useState(false);
+
+  // Track which message ids have already been spoken
+  const spokenIdsRef = useRef<Set<string>>(new Set());
+
+  // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
+  useEffect(() => {
+    if (muted) return;
+    const latest = messages[messages.length - 1];
+    if (
+      latest &&
+      latest.role === "assistant" &&
+      !latest.isStreaming &&
+      latest.content.trim() &&
+      !spokenIdsRef.current.has(latest.id)
+    ) {
+      spokenIdsRef.current.add(latest.id);
+      speak(latest.content);
+    }
+  }, [messages, muted, speak]);
+
+  // Auto-greet on first mount (after login). Uses sessionStorage so a hard
+  // refresh inside the same tab doesn't keep replaying the welcome.
+  const greetedRef = useRef(false);
+  useEffect(() => {
+    if (greetedRef.current) return;
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem("jarvis_greeted") === "true") {
+      greetedRef.current = true;
+      return;
+    }
+    greetedRef.current = true;
+    window.sessionStorage.setItem("jarvis_greeted", "true");
+    if (!muted) {
+      speak("Welcome back, Zac. Systems are online. How may I assist?");
+    }
+  }, [muted, speak]);
 
   // Phase 8 — Escape key stops in-flight voice playback
   useEffect(() => {
