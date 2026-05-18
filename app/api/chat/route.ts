@@ -45,12 +45,17 @@ export async function POST(req: NextRequest) {
   let messages: ApiMessage[];
   let deep: boolean;
   let maxTokens: number;
+  let crossSessionContext: string | undefined;
 
   try {
     const body = await req.json();
     messages = body.messages ?? [];
     deep = body.deep ?? false;
     maxTokens = body.maxTokens ?? (deep ? 4096 : 2048);
+    crossSessionContext =
+      typeof body.crossSessionContext === 'string' && body.crossSessionContext.trim()
+        ? body.crossSessionContext
+        : undefined;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,
@@ -88,10 +93,14 @@ export async function POST(req: NextRequest) {
     ? detectLucyCommand(lastUserMessage.content)
     : null;
 
-  // ── Build system prompt ────────────────────────────────────────────────────
-  const systemPrompt = lucyCommand
-    ? `${buildSystemPrompt(missingIntegrations)}\n\n${LUCY_SYSTEM_CONTEXT}`
-    : buildSystemPrompt(missingIntegrations);
+  // ── Build system prompt (Phase 8: prepend cross-session context if present) ─
+  const systemPrompt = [
+    buildSystemPrompt(missingIntegrations),
+    lucyCommand ? LUCY_SYSTEM_CONTEXT : null,
+    crossSessionContext ?? null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   const useDeep = deep || commandResult.isDeep;
   const model = useDeep ? OPUS_MODEL : SONNET_MODEL;
