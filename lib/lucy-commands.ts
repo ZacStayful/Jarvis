@@ -11,7 +11,7 @@ export type LucyCommandType =
 // ─── Pattern definitions ──────────────────────────────────────────────────────
 
 const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
-  // Navigate — open the Lucy view
+  // Navigate — open the Lucy view (which IS the Monday-backed pipeline UI)
   {
     type: 'navigate',
     tests: [
@@ -25,6 +25,22 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
       /lucy center/i,
       /lucy command/i,
       /open the lucy/i,
+      // Monday / pipeline phrases — Lucy IS the Monday integration UI
+      /\bmonday\b/i,
+      /monday\s*\.?\s*com/i,
+      /monday access/i,
+      /monday pipeline/i,
+      /open pipeline/i,
+      /show pipeline/i,
+      /my pipeline/i,
+      /the pipeline/i,
+      /lead pipeline/i,
+      /sales pipeline/i,
+      /\bshow.{0,10}leads?\b/i,
+      /\bcheck.{0,15}leads?\b/i,
+      /\bmy leads?\b/i,
+      /\bopen.{0,10}leads?\b/i,
+      /\bcrm\b/i,
     ],
   },
   // Recommend — who should Lucy call
