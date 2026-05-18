@@ -19,6 +19,7 @@ import { NextRequest } from 'next/server';
 import { buildMcpServers } from '@/lib/mcp-servers';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
 import { detectCommand, ROUTE_RESPONSES } from '@/lib/commandRouter';
+import { detectLucyCommand, LUCY_SYSTEM_CONTEXT } from '@/lib/lucy-commands';
 import type { ApiMessage } from '@/types/jarvis';
 
 export const runtime = 'edge';
@@ -76,14 +77,21 @@ export async function POST(req: NextRequest) {
   // ── Build MCP config ───────────────────────────────────────────────────────
   const { servers: mcpServers, missing: missingIntegrations } = buildMcpServers();
 
-  // ── Build system prompt ────────────────────────────────────────────────────
-  const systemPrompt = buildSystemPrompt(missingIntegrations);
-
   // ── Phase 5: detect navigation commands on the last user message ──────────
   const lastUserMessage = messages.filter(m => m.role === 'user').at(-1);
   const commandResult = lastUserMessage
     ? detectCommand(lastUserMessage.content)
     : { view: null, params: undefined, isDeep: false };
+
+  // ── Phase 7: detect Lucy intent and append the Lucy system context ────────
+  const lucyCommand = lastUserMessage
+    ? detectLucyCommand(lastUserMessage.content)
+    : null;
+
+  // ── Build system prompt ────────────────────────────────────────────────────
+  const systemPrompt = lucyCommand
+    ? `${buildSystemPrompt(missingIntegrations)}\n\n${LUCY_SYSTEM_CONTEXT}`
+    : buildSystemPrompt(missingIntegrations);
 
   const useDeep = deep || commandResult.isDeep;
   const model = useDeep ? OPUS_MODEL : SONNET_MODEL;

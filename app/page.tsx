@@ -25,6 +25,8 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useTTS } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
+import { detectLucyCommand } from "@/lib/lucy-commands";
+import { LucyView } from "@/views/LucyView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
@@ -77,6 +79,9 @@ export default function JarvisPage() {
   // Phase 6 — end-of-day learning panel overlay
   const [learningOpen, setLearningOpen] = useState(false);
 
+  // Phase 7 — Lucy intelligence centre
+  const [lucyOpen, setLucyOpen] = useState(false);
+
   const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
   // Always-on voice — persisted in localStorage, default on
@@ -101,6 +106,11 @@ export default function JarvisPage() {
       if (isEODCommand(text)) {
         setLearningOpen(true);
         return;
+      }
+      // Phase 7 — Lucy intent opens the Lucy view (still sends to Claude
+      // so the chat layer can respond with the Lucy system context injected)
+      if (detectLucyCommand(text)) {
+        setLucyOpen(true);
       }
       const route = routeCommand(text);
       if (route) setActiveView(route);
@@ -192,6 +202,10 @@ export default function JarvisPage() {
       setLearningOpen(true);
       return;
     }
+    // Phase 7 — Lucy intent opens the Lucy view (still sends to Claude)
+    if (detectLucyCommand(txt)) {
+      setLucyOpen(true);
+    }
     const route = routeCommand(txt);
     if (route) setActiveView(route);
     sendMessage(txt);
@@ -238,9 +252,11 @@ export default function JarvisPage() {
         state={state}
         activeView={activeView}
         routedView={routedView}
+        lucyOpen={lucyOpen}
         onNavBack={() => {
           setActiveView(null);
           setRoutedView(null);
+          setLucyOpen(false);
         }}
         onLogout={handleLogout}
         muted={muted}
@@ -248,7 +264,11 @@ export default function JarvisPage() {
       />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
-        {routedView === "news-briefing" ? (
+        {lucyOpen ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <LucyView />
+          </div>
+        ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <NewsBriefingView autoFetch />
           </div>
@@ -306,6 +326,7 @@ function Header({
   state,
   activeView,
   routedView,
+  lucyOpen,
   onNavBack,
   onLogout,
   muted,
@@ -314,12 +335,13 @@ function Header({
   state: JARVISState;
   activeView: ViewId | null;
   routedView: ViewRoute;
+  lucyOpen: boolean;
   onNavBack: () => void;
   onLogout: () => void;
   muted: boolean;
   onToggleMuted: () => void;
 }) {
-  const showBack = activeView !== null || routedView !== null;
+  const showBack = activeView !== null || routedView !== null || lucyOpen;
   const [time, setTime] = useState("");
   useEffect(() => {
     const update = () => {
