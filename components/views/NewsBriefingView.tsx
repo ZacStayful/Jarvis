@@ -6,7 +6,7 @@
 // cross-story pattern panel. Designed for Stayful green #5d8156 dark aesthetic.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useIntelligence } from '@/hooks/useIntelligence';
 import type { NewsArticle, NewsPattern } from '@/hooks/useIntelligence';
 import {
@@ -441,11 +441,13 @@ function LoadingSkeleton({ progress }: { progress: string }) {
 
 interface NewsBriefingViewProps {
   autoFetch?: boolean;
+  onComplete?: (articles: NewsArticle[]) => void;
 }
 
-export default function NewsBriefingView({ autoFetch = true }: NewsBriefingViewProps) {
+export default function NewsBriefingView({ autoFetch = true, onComplete }: NewsBriefingViewProps) {
   const { news, fetchNewsBriefing, refreshNews } = useIntelligence();
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const wasLoadingRef = useRef(false);
 
   // Auto-fetch on mount if enabled
   useEffect(() => {
@@ -453,6 +455,14 @@ export default function NewsBriefingView({ autoFetch = true }: NewsBriefingViewP
       fetchNewsBriefing();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fire onComplete on the loading-finished transition (once per refresh)
+  useEffect(() => {
+    if (wasLoadingRef.current && !news.isLoading && news.articles.length > 0) {
+      onComplete?.(news.articles);
+    }
+    wasLoadingRef.current = news.isLoading;
+  }, [news.isLoading, news.articles, onComplete]);
 
   // Filtered + sorted articles
   const filteredArticles = sortByPriority(

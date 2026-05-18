@@ -148,7 +148,7 @@ async function analyseArticleBatch(
   }));
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     system: NEWS_ANALYSIS_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: JSON.stringify(input) }],
@@ -175,7 +175,7 @@ async function detectPatterns(articles: NewsArticle[]): Promise<NewsPattern[]> {
   }));
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     system: NEWS_PATTERN_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: JSON.stringify(condensed) }],
@@ -260,29 +260,22 @@ export async function POST(req: NextRequest) {
             count: allRaw.length,
           });
 
-          // Analyse in batches of 8 articles (token budget management)
+          // Analyse all batches in parallel — Sonnet handles concurrent load
           const BATCH_SIZE = 8;
-          const allAnalysed: NewsArticle[] = [];
-
+          const batches: { batch: RawArticle[]; offset: number }[] = [];
           for (let i = 0; i < allRaw.length; i += BATCH_SIZE) {
-            const batch = allRaw.slice(i, i + BATCH_SIZE);
+            batches.push({ batch: allRaw.slice(i, i + BATCH_SIZE), offset: i });
+          }
 
-            try {
-              const analysed = await analyseArticleBatch(batch, i);
+          const batchResults = await Promise.all(
+            batches.map(({ batch, offset }) =>
+              analyseArticleBatch(batch, offset).catch(() => [] as NewsArticle[])
+            )
+          );
 
-              // Sort batch by priority before streaming
-              const sorted = sortByPriority(analysed);
-
-              for (const article of sorted) {
-                allAnalysed.push(article);
-                send({ type: 'article', article });
-              }
-            } catch (batchErr) {
-              send({
-                type: 'progress',
-                message: `Batch ${Math.floor(i / BATCH_SIZE) + 1} analysis error — continuing...`,
-              });
-            }
+          const allAnalysed: NewsArticle[] = sortByPriority(batchResults.flat());
+          for (const article of allAnalysed) {
+            send({ type: 'article', article });
           }
 
           // Cross-story pattern detection (only if we have enough data)

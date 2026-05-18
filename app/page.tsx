@@ -125,6 +125,10 @@ export default function JarvisPage() {
   // Track which message ids have already been spoken
   const spokenIdsRef = useRef<Set<string>>(new Set());
 
+  // When applyNavIntents speaks an ack, we suppress the next assistant
+  // message's auto-TTS so ack + Claude's chat reply don't overlap.
+  const skipNextAssistantSpeechRef = useRef(false);
+
   // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
   useEffect(() => {
     if (muted) return;
@@ -137,6 +141,10 @@ export default function JarvisPage() {
       !spokenIdsRef.current.has(latest.id)
     ) {
       spokenIdsRef.current.add(latest.id);
+      if (skipNextAssistantSpeechRef.current) {
+        skipNextAssistantSpeechRef.current = false;
+        return;
+      }
       speak(latest.content);
     }
   }, [messages, muted, speak]);
@@ -219,9 +227,40 @@ export default function JarvisPage() {
     if (!lucy && !portfolio && !route) return;
 
     clearAllViews();
-    if (portfolio) setPortfolioOpen(true);
-    else if (lucy) setLucyOpen(true);
-    else if (route) setActiveView(route);
+
+    let ack: string | null = null;
+    if (portfolio) {
+      setPortfolioOpen(true);
+      ack = "Opening portfolio dashboard, sir.";
+    } else if (lucy) {
+      setLucyOpen(true);
+      ack = "Opening Lucy intelligence centre.";
+    } else if (route) {
+      setActiveView(route);
+      const lower = text.toLowerCase();
+      if (lower.includes("news") || lower.includes("brief")) {
+        ack = "Accessing intelligence feeds, sir. This will take a moment.";
+      } else if (lower.includes("invest") || lower.includes("stock")) {
+        ack = "Opening investment dashboard.";
+      } else if (lower.includes("task") || lower.includes("todo")) {
+        ack = "Opening task centre.";
+      } else if (
+        lower.includes("lead") ||
+        lower.includes("pipeline") ||
+        lower.includes("sales")
+      ) {
+        ack = "Opening lead pipeline.";
+      } else if (lower.includes("command") || lower.includes("overview")) {
+        ack = "Opening command centre.";
+      }
+    }
+
+    // Suppress the next assistant auto-speech so the ack + (briefing summary)
+    // don't overlap with Claude's chat reply.
+    if (ack && !muted) {
+      skipNextAssistantSpeechRef.current = true;
+      speak(ack);
+    }
   };
 
   // Combined visual state
@@ -325,7 +364,21 @@ export default function JarvisPage() {
           </div>
         ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            <NewsBriefingView autoFetch />
+            <NewsBriefingView
+              autoFetch
+              onComplete={(articles) => {
+                if (muted) return;
+                const top = articles.slice(0, 4);
+                if (top.length === 0) return;
+                const lines = top.map(
+                  (a, i) =>
+                    `Story ${i + 1}: ${a.headline}. Stayful impact: ${a.stayfulImpact}`
+                );
+                speak(
+                  `Intelligence briefing complete. ${top.length} priority stories. ${lines.join(" — ")}`
+                );
+              }}
+            />
           </div>
         ) : routedView === "investment-dashboard" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
