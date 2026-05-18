@@ -28,6 +28,14 @@ const PATTERNS: Array<{ type: PortfolioCommandType; tests: RegExp[] }> = [
       /go to portfolio/i,
       /\bopen.{0,5}holdings?\b/i,
       /framework v2/i,
+      // Quarterly update phrases — these should land on the dashboard so
+      // Zac sees the placeholders he's about to overwrite, and the
+      // PORTFOLIO_SYSTEM_CONTEXT gets injected for the conversation.
+      /\b(run|start|do)\s+(the\s+)?q\d\s+(\d{2,4}\s+)?(quarterly\s+)?update/i,
+      /\b(run|start|do)\s+(the\s+)?quarterly\s+update/i,
+      /update\s+(the\s+)?(portfolio|dashboard)\s+for\s+q\d/i,
+      /populate\s+(the\s+)?(portfolio|dashboard|holdings?)/i,
+      /\bq\d\s+\d{2,4}\s+update/i,
     ],
   },
   {

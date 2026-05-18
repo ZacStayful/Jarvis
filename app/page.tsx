@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -110,6 +110,18 @@ export default function JarvisPage() {
   // Portfolio Intelligence Dashboard (mounted inline inside the JARVIS shell)
   const [portfolioOpen, setPortfolioOpen] = useState(false);
 
+  // Centralised "switch view" helper — every nav intent must clear its
+  // siblings first, otherwise the render precedence makes the first-opened
+  // view sticky (see app/page.tsx:306–323 ternary chain).
+  const clearAllViews = useCallback(() => {
+    setActiveView(null);
+    setRoutedView(null);
+    setLucyOpen(false);
+    setPortfolioOpen(false);
+    // learningOpen is an overlay — intentionally left alone so EOD can
+    // layer over whatever's currently in the shell.
+  }, []);
+
   // Track which message ids have already been spoken
   const spokenIdsRef = useRef<Set<string>>(new Set());
 
@@ -182,14 +194,7 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
-      // ALL view-opening intercepts now fall through to sendMessage so JARVIS
-      // chats while the view opens. Portfolio runs BEFORE routeCommand so the
-      // dashboard wins over the Phase 5 mock investments view.
-      if (isEODCommand(text)) setLearningOpen(true);
-      if (detectLucyCommand(text)) setLucyOpen(true);
-      if (detectPortfolioCommand(text)) setPortfolioOpen(true);
-      const route = routeCommand(text);
-      if (route) setActiveView(route);
+      applyNavIntents(text);
       sendMessage(text);
       // Re-arm listening after the silence-triggered stop, if always-on
       if (voiceAlwaysOn) {
@@ -199,6 +204,25 @@ export default function JarvisPage() {
       }
     },
   });
+
+  // Shared nav-intent handler used by both voice and text paths. Detect
+  // every possible intent, clear competing views once, then set the winner.
+  // Priority: portfolio > lucy > clientside route. EOD is an overlay and
+  // doesn't disturb the underlying view.
+  const applyNavIntents = (text: string) => {
+    if (isEODCommand(text)) setLearningOpen(true);
+
+    const lucy = detectLucyCommand(text);
+    const portfolio = detectPortfolioCommand(text);
+    const route = routeCommand(text);
+
+    if (!lucy && !portfolio && !route) return;
+
+    clearAllViews();
+    if (portfolio) setPortfolioOpen(true);
+    else if (lucy) setLucyOpen(true);
+    else if (route) setActiveView(route);
+  };
 
   // Combined visual state
   const state: JARVISState = isListening
@@ -237,14 +261,7 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
-    // ALL view-opening intercepts now fall through to sendMessage so JARVIS
-    // chats while the view opens (matches the voice flow). Portfolio runs
-    // BEFORE routeCommand so the dashboard wins over the Phase 5 mock view.
-    if (isEODCommand(txt)) setLearningOpen(true);
-    if (detectLucyCommand(txt)) setLucyOpen(true);
-    if (detectPortfolioCommand(txt)) setPortfolioOpen(true);
-    const route = routeCommand(txt);
-    if (route) setActiveView(route);
+    applyNavIntents(txt);
     sendMessage(txt);
   };
 
@@ -291,12 +308,7 @@ export default function JarvisPage() {
         routedView={routedView}
         lucyOpen={lucyOpen}
         portfolioOpen={portfolioOpen}
-        onNavBack={() => {
-          setActiveView(null);
-          setRoutedView(null);
-          setLucyOpen(false);
-          setPortfolioOpen(false);
-        }}
+        onNavBack={clearAllViews}
         onLogout={handleLogout}
         muted={muted}
         onToggleMuted={toggleMuted}

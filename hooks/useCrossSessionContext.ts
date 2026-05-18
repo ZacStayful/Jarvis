@@ -52,11 +52,16 @@ async function memoryApi(
   action: string,
   payload: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>> {
+  // Memory persistence requires NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN.
+  // Skip silently if missing to avoid 401 noise on every load.
+  const token = process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN;
+  if (!token) throw new Error('memory_disabled');
+
   const res = await fetch('/api/memory', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-jarvis-token': process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN ?? '',
+      'x-jarvis-token': token,
     },
     body: JSON.stringify({ action, ...payload }),
   });

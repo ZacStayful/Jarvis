@@ -67,7 +67,10 @@ export interface NewsPattern {
 
 // ─── NewsAPI Fetcher ─────────────────────────────────────────────────────────
 
-async function fetchCategoryArticles(cat: NewsCategory): Promise<RawArticle[]> {
+async function fetchCategoryArticles(
+  cat: NewsCategory,
+  errors: string[]
+): Promise<RawArticle[]> {
   const apiKey = process.env.NEWSAPI_KEY;
   if (!apiKey) return [];
 
@@ -85,7 +88,13 @@ async function fetchCategoryArticles(cat: NewsCategory): Promise<RawArticle[]> {
     url.searchParams.set('apiKey', apiKey);
 
     const res = await fetch(url.toString(), { next: { revalidate: 0 } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      errors.push(
+        `${cat.id}: NewsAPI ${res.status} ${res.statusText} — ${detail.slice(0, 160)}`
+      );
+      return [];
+    }
 
     const data = await res.json();
     if (!data.articles) return [];
@@ -103,8 +112,10 @@ async function fetchCategoryArticles(cat: NewsCategory): Promise<RawArticle[]> {
         categoryId: cat.id,
       });
     }
-  } catch {
-    // Silently continue — partial briefing is better than a crash
+  } catch (err) {
+    errors.push(
+      `${cat.id}: ${err instanceof Error ? err.message : 'fetch failed'}`
+    );
   }
 
   return articles;
@@ -201,6 +212,20 @@ export async function POST(req: NextRequest) {
         };
 
         try {
+          // Fail fast and loud if NewsAPI isn't configured. Free-tier
+          // NewsAPI doesn't permit production server-side calls; you
+          // need the paid plan or a different feed source.
+          if (!process.env.NEWSAPI_KEY) {
+            send({
+              type: 'error',
+              message:
+                'NewsAPI key not configured. Add NEWSAPI_KEY to Vercel environment variables. Note: the free NewsAPI tier blocks server-side requests in production — a paid plan is required.',
+            });
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
+
           send({ type: 'start', message: 'Accessing intelligence feeds, sir.' });
 
           // Fetch from NewsAPI in parallel
@@ -208,18 +233,21 @@ export async function POST(req: NextRequest) {
             categories.includes(c.id)
           );
 
+          const fetchErrors: string[] = [];
           const rawBatches = await Promise.all(
-            selectedCategories.map(cat => fetchCategoryArticles(cat))
+            selectedCategories.map(cat => fetchCategoryArticles(cat, fetchErrors))
           );
 
           const allRaw = deduplicateArticles(rawBatches.flat());
 
           if (allRaw.length === 0) {
-            // NewsAPI not configured — still useful to note
+            const detail =
+              fetchErrors.length > 0
+                ? ` Upstream errors: ${fetchErrors.slice(0, 3).join(' | ')}`
+                : '';
             send({
               type: 'error',
-              message:
-                'No articles retrieved. Ensure NEWSAPI_KEY is set in environment variables.',
+              message: `No articles retrieved from NewsAPI.${detail}`,
             });
             controller.enqueue(encoder.encode('data: [DONE]\n\n'));
             controller.close();

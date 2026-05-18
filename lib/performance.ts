@@ -217,6 +217,11 @@ export const timingTracker = new TimingTracker();
  * Called once on app mount to reduce latency on first commands.
  */
 export async function prefetchOnMount(): Promise<void> {
+  // Skip silently when the client memory token isn't configured — otherwise
+  // every page load logs a 401 in the Network tab.
+  const token = process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN;
+  if (!token) return;
+
   try {
     // Fire these in parallel — they populate their caches independently
     await Promise.allSettled([
@@ -225,7 +230,7 @@ export async function prefetchOnMount(): Promise<void> {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-jarvis-token': process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN ?? '',
+          'x-jarvis-token': token,
         },
         body: JSON.stringify({ action: 'load_cross_session' }),
       }),

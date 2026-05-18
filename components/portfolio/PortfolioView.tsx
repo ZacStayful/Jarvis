@@ -45,6 +45,12 @@ export function PortfolioView() {
   const concentratedHoldings = holdings.filter(h => !h.isCandidate);
   const candidates = holdings.filter(h => h.isCandidate);
 
+  // Detect placeholder state: until the first quarterly update runs, every
+  // probability and risk trigger is zero. Show an explicit banner instead
+  // of letting the page look broken / empty.
+  const isPlaceholder =
+    meta.kpis.avgDualProbability === 0 && meta.kpis.tier1TriggersTotal === 0;
+
   return (
     <div
       style={{
@@ -54,6 +60,79 @@ export function PortfolioView() {
         color: C.text,
       }}
     >
+      {isPlaceholder && (
+        <div
+          style={{
+            border: `1px dashed ${C.amber}77`,
+            background: `${C.amber}10`,
+            borderRadius: 6,
+            padding: "14px 18px",
+            marginBottom: 16,
+          }}
+        >
+          <div
+            className="orb"
+            style={{
+              fontSize: 9,
+              letterSpacing: "0.22em",
+              color: C.amber,
+              marginBottom: 6,
+            }}
+          >
+            DASHBOARD AWAITING FIRST QUARTERLY UPDATE
+          </div>
+          <p
+            className="raj"
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: C.textMid,
+              lineHeight: 1.5,
+              fontWeight: 300,
+            }}
+          >
+            The Framework V{meta.frameworkVersion} structure is locked in, but
+            the live data (probabilities, milestone statuses, Tier 1 risk
+            triggers) hasn&rsquo;t been populated yet. All the values below are
+            placeholders. To get this useful, ask JARVIS in the chat panel:
+          </p>
+          <ul
+            className="raj"
+            style={{
+              margin: "10px 0 0",
+              padding: "0 0 0 18px",
+              color: C.textMid,
+              fontSize: 12.5,
+              lineHeight: 1.7,
+              fontWeight: 300,
+            }}
+          >
+            <li>
+              <strong style={{ color: C.bright }}>
+                &ldquo;Run the Q2 2026 quarterly update&rdquo;
+              </strong>{" "}
+              &mdash; JARVIS will walk you through populating probabilities,
+              milestones, and risk triggers for each holding.
+            </li>
+            <li>
+              <strong style={{ color: C.bright }}>
+                &ldquo;Read me the framework&rdquo;
+              </strong>{" "}
+              &mdash; JARVIS will summarise sections from{" "}
+              <code style={{ color: C.primary }}>portfolio/framework/*.md</code>{" "}
+              (once those files contain the V2.0 master document text).
+            </li>
+            <li>
+              <strong style={{ color: C.bright }}>
+                &ldquo;Evaluate [ticker]&rdquo;
+              </strong>{" "}
+              &mdash; runs Stage&nbsp;2 (8-dimension qualitative) then Stage&nbsp;4
+              (financial filter) against the candidate.
+            </li>
+          </ul>
+        </div>
+      )}
+
       {/* ── Header strip (panel, matches Bubble / Lucy header styling) ─────── */}
       <header
         style={{

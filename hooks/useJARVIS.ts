@@ -120,11 +120,18 @@ async function memoryApi(
   action: string,
   payload: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>> {
+  // Persistence requires both NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN (client) and
+  // JARVIS_INTERNAL_TOKEN (server) to be set in Vercel. If the client token
+  // is missing, every call would 401 — short-circuit so we don't spam
+  // the network tab with failed requests on every chat round-trip.
+  const token = process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN;
+  if (!token) throw new Error('memory_disabled');
+
   const res = await fetch('/api/memory', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-jarvis-token': process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN ?? '',
+      'x-jarvis-token': token,
     },
     body: JSON.stringify({ action, ...payload }),
   });
