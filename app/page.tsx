@@ -23,6 +23,8 @@ import { useJARVIS } from "@/hooks/useJARVIS";
 import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useTTS } from "@/hooks/useTTS";
+import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
+import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
@@ -69,6 +71,12 @@ export default function JarvisPage() {
     },
   });
 
+  // Phase 6 — persist transcripts to localStorage on every message update
+  useTranscriptPersistence(messages);
+
+  // Phase 6 — end-of-day learning panel overlay
+  const [learningOpen, setLearningOpen] = useState(false);
+
   const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
 
   // Always-on voice — persisted in localStorage, default on
@@ -89,6 +97,11 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
+      // Phase 6 — EOD intercept: voice command opens the learning panel
+      if (isEODCommand(text)) {
+        setLearningOpen(true);
+        return;
+      }
       const route = routeCommand(text);
       if (route) setActiveView(route);
       sendMessage(text);
@@ -174,6 +187,11 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
+    // Phase 6 — EOD intercept: typed command opens the learning panel
+    if (isEODCommand(txt)) {
+      setLearningOpen(true);
+      return;
+    }
     const route = routeCommand(txt);
     if (route) setActiveView(route);
     sendMessage(txt);
@@ -273,6 +291,11 @@ export default function JarvisPage() {
       />
 
       <NavDots activeView={activeView} onSelect={handleViewSelect} />
+
+      <LearningSystem
+        isOpen={learningOpen}
+        onClose={() => setLearningOpen(false)}
+      />
     </div>
   );
 }
