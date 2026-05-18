@@ -1,0 +1,18 @@
+{
+  "ticker": "VUSA",
+  "name": "S&P 500 (index floor)",
+  "subtitle": "Permanent capital floor",
+  "allocation": 0.25,
+  "isCandidate": false,
+  "decision": "hold",
+  "decisionLabel": "Hold — index floor",
+  "thesis": "Section 5 index floor — 25% allocation, never reduce below.",
+  "probabilities": {
+    "billionLives": { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "N/A — index floor" },
+    "fiftyYear":    { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "N/A — index floor" }
+  },
+  "riskTriggers": [],
+  "sources": [],
+  "billionLivesProgressHistory": [],
+  "milestones": { "tier1": [], "tier2": [], "tier3": [] }
+}

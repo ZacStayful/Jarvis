@@ -27,6 +27,7 @@ import { useTTS } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
+import { detectPortfolioCommand } from "@/lib/portfolio/commands";
 import { LucyView } from "@/views/LucyView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
@@ -187,6 +188,11 @@ export default function JarvisPage() {
       if (detectLucyCommand(text)) {
         setLucyOpen(true);
       }
+      // Portfolio dashboard — navigate to /portfolio route
+      if (detectPortfolioCommand(text)) {
+        router.push("/portfolio");
+        return;
+      }
       const route = routeCommand(text);
       if (route) setActiveView(route);
       sendMessage(text);
@@ -244,6 +250,11 @@ export default function JarvisPage() {
     // Phase 7 — Lucy intent opens the Lucy view (still sends to Claude)
     if (detectLucyCommand(txt)) {
       setLucyOpen(true);
+    }
+    // Portfolio dashboard — navigate to /portfolio route
+    if (detectPortfolioCommand(txt)) {
+      router.push("/portfolio");
+      return;
     }
     const route = routeCommand(txt);
     if (route) setActiveView(route);

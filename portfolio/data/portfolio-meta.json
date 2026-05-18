@@ -1,0 +1,20 @@
+{
+  "frameworkVersion": "2.0",
+  "investorName": "Zac Harrison",
+  "monthlyContribution": 1666,
+  "lastReviewDate": "2026-05-04",
+  "nextReviewDate": "2026-08-04",
+  "nextFullFrameworkReview": "2027-05-01",
+  "portfolioStructure": {
+    "concentratedPositions": 3,
+    "concentratedAllocationEach": 0.25,
+    "indexFloorAllocation": 0.25,
+    "maxPositionSize": 0.35
+  },
+  "kpis": {
+    "avgDualProbability": 0,
+    "tier1TriggersActive": 0,
+    "tier1TriggersTotal": 0,
+    "daysToNextReview": 0
+  }
+}

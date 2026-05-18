@@ -1,0 +1,18 @@
+{
+  "ticker": "TSLA",
+  "name": "Tesla",
+  "subtitle": "Physical-World AI",
+  "allocation": 0.25,
+  "isCandidate": false,
+  "decision": "hold-monitoring",
+  "decisionLabel": "Hold w/ monitoring",
+  "thesis": "PLACEHOLDER — replace with current thesis summary in first quarterly update.",
+  "probabilities": {
+    "billionLives": { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "PLACEHOLDER" },
+    "fiftyYear":    { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "PLACEHOLDER" }
+  },
+  "riskTriggers": [],
+  "sources": [],
+  "billionLivesProgressHistory": [],
+  "milestones": { "tier1": [], "tier2": [], "tier3": [] }
+}

@@ -1,0 +1,18 @@
+{
+  "ticker": "SPCX",
+  "name": "SpaceX",
+  "subtitle": "Candidate watch — pre-IPO",
+  "allocation": 0,
+  "isCandidate": true,
+  "decision": "watch",
+  "decisionLabel": "Candidate — not yet eligible",
+  "thesis": "PLACEHOLDER — track until IPO + 2yr post-IPO requirement is met (Stage 2 check `revenue-ipq`).",
+  "probabilities": {
+    "billionLives": { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "PLACEHOLDER" },
+    "fiftyYear":    { "value": 0, "trend": "flat", "trendDelta": 0, "drivers": "PLACEHOLDER" }
+  },
+  "riskTriggers": [],
+  "sources": [],
+  "billionLivesProgressHistory": [],
+  "milestones": { "tier1": [], "tier2": [], "tier3": [] }
+}
