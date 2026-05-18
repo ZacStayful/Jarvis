@@ -18,8 +18,12 @@
 import { NextRequest } from 'next/server';
 import { buildMcpServers } from '@/lib/mcp-servers';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
-import { detectCommand, ROUTE_RESPONSES } from '@/lib/commandRouter';
+import { detectCommand } from '@/lib/commandRouter';
 import { detectLucyCommand, LUCY_SYSTEM_CONTEXT } from '@/lib/lucy-commands';
+import {
+  detectPortfolioCommand,
+  PORTFOLIO_SYSTEM_CONTEXT,
+} from '@/lib/portfolio/commands';
 import type { ApiMessage } from '@/types/jarvis';
 
 export const runtime = 'edge';
@@ -93,10 +97,49 @@ export async function POST(req: NextRequest) {
     ? detectLucyCommand(lastUserMessage.content)
     : null;
 
+  // ── Phase 8 portfolio dashboard: detect intent, append portfolio context ──
+  const portfolioCommand = lastUserMessage
+    ? detectPortfolioCommand(lastUserMessage.content)
+    : null;
+
+  // ── ACTIVE VIEW directive: any time a command opens a view, tell Claude
+  //    explicitly what view is being shown and how to respond. Replaces the
+  //    old canned ROUTE_RESPONSES short-circuit so Claude actually thinks
+  //    about what to say instead of repeating a stock phrase.
+  const activeViewName =
+    commandResult.view ??
+    (portfolioCommand ? 'portfolio-dashboard' : null) ??
+    (lucyCommand ? 'lucy-intelligence-centre' : null);
+
+  const activeViewDirective = activeViewName
+    ? `=== ACTIVE VIEW DIRECTIVE ===
+
+Zac has just issued a command that opened the "${activeViewName}" view in the
+JARVIS UI. He is now looking at that panel.
+
+When you reply:
+1. Acknowledge the view change in one sentence — but never reply with only
+   "Opening X now, sir" or similar. Pair the acknowledgement with substance.
+2. Summarise the content of the view (infer from context, working memory, or
+   the system-context blocks above) — focus on key points and what they mean,
+   not a verbatim readout.
+3. Offer either the single most useful next action / advisory point, OR ask
+   one specific clarifying question that would meaningfully sharpen the next
+   step.
+4. If the data isn't available to you (e.g. placeholder values, integration
+   not connected), say so plainly and ask Zac what he wants to populate or
+   check first.
+
+Voice cadence: short sentences. This response will be spoken aloud.
+=== END ACTIVE VIEW DIRECTIVE ===`
+    : null;
+
   // ── Build system prompt (Phase 8: prepend cross-session context if present) ─
   const systemPrompt = [
     buildSystemPrompt(missingIntegrations),
     lucyCommand ? LUCY_SYSTEM_CONTEXT : null,
+    portfolioCommand ? PORTFOLIO_SYSTEM_CONTEXT : null,
+    activeViewDirective,
     crossSessionContext ?? null,
   ]
     .filter(Boolean)
@@ -116,33 +159,16 @@ export async function POST(req: NextRequest) {
         }
       };
 
-      // Emit route event first so the UI can switch views immediately
+      // Emit route event first so the UI can switch views immediately.
+      // The view command is still detected, but the canned ROUTE_RESPONSES
+      // short-circuit is gone — every turn now goes through Claude with the
+      // ACTIVE VIEW DIRECTIVE injected into the system prompt above.
       if (commandResult.view) {
         send({
           type: 'route',
           view: commandResult.view,
           params: commandResult.params,
         });
-      }
-
-      // Simple nav commands (everything except investment-dashboard) get a
-      // canned JARVIS verbal response streamed word-by-word, then end.
-      const isSimpleNavCommand =
-        commandResult.view !== null &&
-        commandResult.view !== 'investment-dashboard';
-
-      if (isSimpleNavCommand && commandResult.view) {
-        send({ type: 'start', model });
-        const verbalResponse =
-          ROUTE_RESPONSES[commandResult.view] ?? 'Navigating now, sir.';
-        const words = verbalResponse.split(' ');
-        for (const word of words) {
-          send({ type: 'text', text: word + ' ' });
-          await new Promise(r => setTimeout(r, 30));
-        }
-        send('[DONE]');
-        controller.close();
-        return;
       }
 
       try {

@@ -1,44 +1,41 @@
 "use client";
 
-// Portfolio Intelligence Dashboard — minimal scaffold view.
-// Reads from portfolio/data/*.json via @/lib/portfolio/data-loader.
-// Real position cards, charts, evaluator etc. are follow-up work — see
-// portfolio/CLAUDE.md §9 "Scaffold status".
+// Portfolio Intelligence Dashboard — JARVIS shell view.
+// Mounted inline by app/page.tsx (same pattern as LucyView). Reads from
+// portfolio/data/*.json via @/lib/portfolio/data-loader. Real charts,
+// candidate evaluator, projection tool are follow-up work — see
+// portfolio/CLAUDE.md §9.
 
+import { C } from "@/lib/jarvis-design";
 import {
   loadPortfolioMeta,
   loadHoldings,
   loadDevelopments,
 } from "@/lib/portfolio/data-loader";
 
-const COLOR = {
-  pass: "#16a34a",
-  watch: "#ca8a04",
-  triggered: "#dc2626",
-  thesis: "#0f172a",
-  surface: "#f8fafc",
-  border: "#e5e7eb",
-  muted: "#64748b",
-  tsla: "#dc2626",
-  googl: "#1d4ed8",
-  spcx: "#7c3aed",
-  macro: "#475569",
+// Brand-coloured ticker tints — softened with hex-alpha for the dark shell
+const TICKER_BG: Record<string, string> = {
+  TSLA:  "#dc262622",
+  GOOGL: "#1d4ed822",
+  SPCX:  "#7c3aed22",
+};
+const TICKER_FG: Record<string, string> = {
+  TSLA:  "#f87171",
+  GOOGL: "#7aa7ff",
+  SPCX:  "#c4a8ff",
 };
 
-const tagColor = (ticker: string): string => {
-  switch (ticker.toUpperCase()) {
-    case "TSLA":
-      return COLOR.tsla;
-    case "GOOGL":
-      return COLOR.googl;
-    case "SPCX":
-      return COLOR.spcx;
-    default:
-      return COLOR.muted;
-  }
-};
+const tickerBg = (t: string) => TICKER_BG[t.toUpperCase()] ?? `${C.primary}22`;
+const tickerFg = (t: string) => TICKER_FG[t.toUpperCase()] ?? C.bright;
 
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+
+// Dual probability semantic colour (pass / watch / triggered) on JARVIS palette
+function probColour(value: number): string {
+  if (value >= 0.6) return C.bright;
+  if (value >= 0.4) return C.amber;
+  return C.red;
+}
 
 export function PortfolioView() {
   const meta = loadPortfolioMeta();
@@ -51,118 +48,168 @@ export function PortfolioView() {
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: COLOR.surface,
-        color: COLOR.thesis,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        padding: 24,
+        flex: 1,
+        overflow: "auto",
+        padding: 20,
+        color: C.text,
       }}
     >
-      {/* ── Header / KPI strip ─────────────────────────────────────────── */}
+      {/* ── Header strip (panel, matches Bubble / Lucy header styling) ─────── */}
       <header
         style={{
-          background: COLOR.thesis,
-          color: "white",
-          padding: "20px 24px",
-          borderRadius: 12,
-          marginBottom: 24,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          padding: "14px 18px",
+          marginBottom: 16,
         }}
       >
-        <div style={{ fontSize: 11, opacity: 0.7, letterSpacing: "0.18em", fontFamily: "monospace" }}>
+        <div
+          className="orb"
+          style={{
+            fontSize: 9,
+            letterSpacing: "0.22em",
+            color: C.primary,
+            marginBottom: 6,
+          }}
+        >
           PORTFOLIO INTELLIGENCE · FRAMEWORK V{meta.frameworkVersion}
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, marginTop: 8 }}>
+        <h1
+          className="raj"
+          style={{ fontSize: 18, fontWeight: 600, color: C.text, lineHeight: 1.3 }}
+        >
           {meta.investorName} — permanent capital · billion-lives thesis
         </h1>
 
-        <div style={{ display: "flex", gap: 32, marginTop: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 28,
+            marginTop: 12,
+            flexWrap: "wrap",
+          }}
+        >
           <Kpi label="MONTHLY CONTRIBUTION" value={`£${meta.monthlyContribution.toLocaleString()}`} />
           <Kpi label="AVG DUAL PROBABILITY" value={pct(meta.kpis.avgDualProbability)} />
-          <Kpi label="TIER 1 TRIGGERS ACTIVE" value={`${meta.kpis.tier1TriggersActive} / ${meta.kpis.tier1TriggersTotal}`} />
+          <Kpi
+            label="TIER 1 TRIGGERS"
+            value={`${meta.kpis.tier1TriggersActive} / ${meta.kpis.tier1TriggersTotal}`}
+            valueColour={
+              meta.kpis.tier1TriggersActive > 0 ? C.amber : C.bright
+            }
+          />
           <Kpi label="NEXT REVIEW" value={meta.nextReviewDate} />
         </div>
       </header>
 
-      {/* ── Master thesis bar (placeholder; populate from framework/thesis.md) ── */}
+      {/* ── Master thesis bar (placeholder — populate from framework/thesis.md) */}
       <section
         style={{
-          borderLeft: `4px solid ${COLOR.thesis}`,
-          padding: "12px 16px",
-          background: "white",
-          marginBottom: 24,
+          borderLeft: `3px solid ${C.primary}`,
+          padding: "10px 14px",
+          background: `${C.primary}0a`,
+          marginBottom: 20,
+          color: C.textMid,
           fontStyle: "italic",
-          color: COLOR.muted,
+          borderRadius: 4,
         }}
       >
-        Master thesis — populate from <code>portfolio/framework/thesis.md</code> in the
+        <span className="mono" style={{ fontSize: 9, color: C.primary, letterSpacing: "0.14em", marginRight: 8 }}>
+          MASTER THESIS
+        </span>
+        Populate from <code style={{ color: C.bright }}>portfolio/framework/thesis.md</code> in the
         first quarterly update.
       </section>
 
-      {/* ── Position grid ─────────────────────────────────────────────── */}
-      <h2 style={{ fontSize: 13, letterSpacing: "0.14em", color: COLOR.muted, fontFamily: "monospace", marginBottom: 12 }}>
-        CONCENTRATED POSITIONS
-      </h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12, marginBottom: 32 }}>
+      {/* ── Concentrated positions grid ─────────────────────────────────────── */}
+      <SectionLabel>CONCENTRATED POSITIONS</SectionLabel>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+          gap: 10,
+          marginBottom: 24,
+        }}
+      >
         {concentratedHoldings.map(h => (
           <div
             key={h.ticker}
             style={{
-              background: "white",
-              border: `1px solid ${COLOR.border}`,
-              borderRadius: 8,
-              padding: 16,
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: 6,
+              padding: 14,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
               <span
+                className="mono"
                 style={{
-                  background: tagColor(h.ticker),
-                  color: "white",
-                  fontFamily: "monospace",
-                  fontSize: 10,
+                  background: tickerBg(h.ticker),
+                  color: tickerFg(h.ticker),
+                  fontSize: 9,
                   padding: "2px 6px",
                   borderRadius: 3,
-                  letterSpacing: "0.06em",
+                  letterSpacing: "0.08em",
                 }}
               >
                 {h.ticker}
               </span>
-              <strong style={{ fontSize: 15 }}>{h.name}</strong>
+              <strong className="raj" style={{ fontSize: 14, color: C.text }}>
+                {h.name}
+              </strong>
             </div>
-            <div style={{ fontSize: 11, color: COLOR.muted, marginBottom: 12 }}>
-              {h.subtitle} · {pct(h.allocation)} allocation · {h.decisionLabel}
+            <div className="mono" style={{ fontSize: 9, color: C.textLow, marginBottom: 12, letterSpacing: "0.06em" }}>
+              {h.subtitle.toUpperCase()} · {pct(h.allocation)} · {h.decisionLabel.toUpperCase()}
             </div>
-            <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
+            <div style={{ display: "flex", gap: 18 }}>
               <DualProb label="P(1B lives)" value={h.probabilities.billionLives.value} />
-              <DualProb label="P(50yr)"    value={h.probabilities.fiftyYear.value} />
+              <DualProb label="P(50yr)"     value={h.probabilities.fiftyYear.value} />
             </div>
-            <p style={{ fontSize: 12, color: COLOR.muted, marginTop: 12, lineHeight: 1.5 }}>
+            <p
+              className="raj"
+              style={{
+                fontSize: 12,
+                color: C.textMid,
+                marginTop: 12,
+                lineHeight: 1.5,
+                fontWeight: 300,
+              }}
+            >
               {h.thesis}
             </p>
           </div>
         ))}
       </div>
 
-      {/* ── Candidates ───────────────────────────────────────────────── */}
+      {/* ── Candidates ─────────────────────────────────────────────────────── */}
       {candidates.length > 0 && (
         <>
-          <h2 style={{ fontSize: 13, letterSpacing: "0.14em", color: COLOR.muted, fontFamily: "monospace", marginBottom: 12 }}>
-            CANDIDATES (WATCHLIST)
-          </h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12, marginBottom: 32 }}>
+          <SectionLabel>CANDIDATES (WATCHLIST)</SectionLabel>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: 10,
+              marginBottom: 24,
+            }}
+          >
             {candidates.map(c => (
               <div
                 key={c.ticker}
                 style={{
-                  background: `${COLOR.watch}11`,
-                  border: `1px dashed ${COLOR.watch}`,
-                  borderRadius: 8,
-                  padding: 16,
+                  background: `${C.amber}0e`,
+                  border: `1px dashed ${C.amber}55`,
+                  borderRadius: 6,
+                  padding: 14,
                 }}
               >
-                <strong>{c.name}</strong>
-                <div style={{ fontSize: 11, color: COLOR.muted, marginTop: 4 }}>
-                  {c.subtitle} · {c.decisionLabel}
+                <strong className="raj" style={{ fontSize: 14, color: C.text }}>
+                  {c.name}
+                </strong>
+                <div className="mono" style={{ fontSize: 9, color: C.textLow, marginTop: 4, letterSpacing: "0.06em" }}>
+                  {c.subtitle.toUpperCase()} · {c.decisionLabel.toUpperCase()}
                 </div>
               </div>
             ))}
@@ -170,14 +217,12 @@ export function PortfolioView() {
         </>
       )}
 
-      {/* ── Developments feed ─────────────────────────────────────────── */}
-      <h2 style={{ fontSize: 13, letterSpacing: "0.14em", color: COLOR.muted, fontFamily: "monospace", marginBottom: 12 }}>
-        TOP DEVELOPMENTS — {developments.quarter}
-      </h2>
+      {/* ── Developments feed ──────────────────────────────────────────────── */}
+      <SectionLabel>TOP DEVELOPMENTS — {developments.quarter}</SectionLabel>
       {developments.items.length === 0 ? (
-        <p style={{ color: COLOR.muted, fontSize: 13 }}>
+        <p className="raj" style={{ color: C.textLow, fontSize: 12, fontStyle: "italic" }}>
           No developments recorded yet. Add them to{" "}
-          <code>portfolio/data/developments.json</code> during the quarterly update.
+          <code style={{ color: C.bright }}>portfolio/data/developments.json</code> during the quarterly update.
         </p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
@@ -185,9 +230,9 @@ export function PortfolioView() {
             <li
               key={i}
               style={{
-                background: "white",
-                border: `1px solid ${COLOR.border}`,
-                borderRadius: 6,
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+                borderRadius: 4,
                 padding: "8px 12px",
                 marginBottom: 6,
                 display: "flex",
@@ -196,10 +241,10 @@ export function PortfolioView() {
               }}
             >
               <span
+                className="mono"
                 style={{
-                  background: tagColor(d.tag),
-                  color: "white",
-                  fontFamily: "monospace",
+                  background: tickerBg(d.tag),
+                  color: tickerFg(d.tag),
                   fontSize: 9,
                   padding: "2px 5px",
                   borderRadius: 3,
@@ -207,9 +252,11 @@ export function PortfolioView() {
               >
                 {d.tag}
               </span>
-              <span style={{ fontSize: 13 }}>{d.text}</span>
+              <span className="raj" style={{ fontSize: 12, color: C.text }}>
+                {d.text}
+              </span>
               {d.isSignificant && (
-                <span style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: 10, color: COLOR.triggered }}>
+                <span className="mono" style={{ marginLeft: "auto", fontSize: 9, color: C.red, letterSpacing: "0.1em" }}>
                   SIGNIFICANT
                 </span>
               )}
@@ -218,33 +265,87 @@ export function PortfolioView() {
         </ul>
       )}
 
-      <footer style={{ marginTop: 48, fontSize: 11, color: COLOR.muted }}>
-        Scaffold v1.0 — see <code>portfolio/CLAUDE.md §9</code> for the build queue.
-        Run the first quarterly update to populate real values.
+      <footer className="mono" style={{ marginTop: 32, fontSize: 9, color: C.textLow, letterSpacing: "0.1em" }}>
+        SCAFFOLD V1.0 · BUILD QUEUE: portfolio/CLAUDE.md §9
       </footer>
     </div>
   );
 }
 
-// ── Local helpers ──────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="orb"
+      style={{
+        fontSize: 9,
+        letterSpacing: "0.22em",
+        color: C.primary,
+        marginBottom: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.primary}44, transparent)` }} />
+      {children}
+      <span style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${C.primary}44)` }} />
+    </div>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  valueColour,
+}: {
+  label: string;
+  value: string;
+  valueColour?: string;
+}) {
   return (
     <div>
-      <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.14em", fontFamily: "monospace" }}>
+      <div
+        className="mono"
+        style={{ fontSize: 9, color: C.textLow, letterSpacing: "0.14em" }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: 18, fontWeight: 600, marginTop: 2 }}>{value}</div>
+      <div
+        className="orb"
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          marginTop: 2,
+          color: valueColour ?? C.text,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
 function DualProb({ label, value }: { label: string; value: number }) {
-  const colour = value >= 0.6 ? COLOR.pass : value >= 0.4 ? COLOR.watch : COLOR.triggered;
+  const colour = probColour(value);
   return (
     <div>
-      <div style={{ fontSize: 10, color: COLOR.muted, fontFamily: "monospace" }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 600, color: colour, fontFamily: "monospace" }}>
+      <div
+        className="mono"
+        style={{ fontSize: 9, color: C.textLow, letterSpacing: "0.1em" }}
+      >
+        {label}
+      </div>
+      <div
+        className="orb"
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          color: colour,
+          marginTop: 2,
+        }}
+      >
         {pct(value)}
       </div>
     </div>

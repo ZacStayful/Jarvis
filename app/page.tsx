@@ -29,6 +29,7 @@ import { LearningSystem, isEODCommand } from "@/components/learning/LearningSyst
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
 import { LucyView } from "@/views/LucyView";
+import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
 import { JarvisEye } from "@/components/jarvis/JarvisEye";
@@ -106,6 +107,9 @@ export default function JarvisPage() {
   // Phase 7 — Lucy intelligence centre
   const [lucyOpen, setLucyOpen] = useState(false);
 
+  // Portfolio Intelligence Dashboard (mounted inline inside the JARVIS shell)
+  const [portfolioOpen, setPortfolioOpen] = useState(false);
+
   // Track which message ids have already been spoken
   const spokenIdsRef = useRef<Set<string>>(new Set());
 
@@ -178,21 +182,12 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
-      // Phase 6 — EOD intercept: voice command opens the learning panel
-      if (isEODCommand(text)) {
-        setLearningOpen(true);
-        return;
-      }
-      // Phase 7 — Lucy intent opens the Lucy view (still sends to Claude
-      // so the chat layer can respond with the Lucy system context injected)
-      if (detectLucyCommand(text)) {
-        setLucyOpen(true);
-      }
-      // Portfolio dashboard — navigate to /portfolio route
-      if (detectPortfolioCommand(text)) {
-        router.push("/portfolio");
-        return;
-      }
+      // ALL view-opening intercepts now fall through to sendMessage so JARVIS
+      // chats while the view opens. Portfolio runs BEFORE routeCommand so the
+      // dashboard wins over the Phase 5 mock investments view.
+      if (isEODCommand(text)) setLearningOpen(true);
+      if (detectLucyCommand(text)) setLucyOpen(true);
+      if (detectPortfolioCommand(text)) setPortfolioOpen(true);
       const route = routeCommand(text);
       if (route) setActiveView(route);
       sendMessage(text);
@@ -242,20 +237,12 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
-    // Phase 6 — EOD intercept: typed command opens the learning panel
-    if (isEODCommand(txt)) {
-      setLearningOpen(true);
-      return;
-    }
-    // Phase 7 — Lucy intent opens the Lucy view (still sends to Claude)
-    if (detectLucyCommand(txt)) {
-      setLucyOpen(true);
-    }
-    // Portfolio dashboard — navigate to /portfolio route
-    if (detectPortfolioCommand(txt)) {
-      router.push("/portfolio");
-      return;
-    }
+    // ALL view-opening intercepts now fall through to sendMessage so JARVIS
+    // chats while the view opens (matches the voice flow). Portfolio runs
+    // BEFORE routeCommand so the dashboard wins over the Phase 5 mock view.
+    if (isEODCommand(txt)) setLearningOpen(true);
+    if (detectLucyCommand(txt)) setLucyOpen(true);
+    if (detectPortfolioCommand(txt)) setPortfolioOpen(true);
     const route = routeCommand(txt);
     if (route) setActiveView(route);
     sendMessage(txt);
@@ -303,10 +290,12 @@ export default function JarvisPage() {
         activeView={activeView}
         routedView={routedView}
         lucyOpen={lucyOpen}
+        portfolioOpen={portfolioOpen}
         onNavBack={() => {
           setActiveView(null);
           setRoutedView(null);
           setLucyOpen(false);
+          setPortfolioOpen(false);
         }}
         onLogout={handleLogout}
         muted={muted}
@@ -314,7 +303,11 @@ export default function JarvisPage() {
       />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
-        {lucyOpen ? (
+        {portfolioOpen ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0, display: "flex" }}>
+            <PortfolioView />
+          </div>
+        ) : lucyOpen ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <LucyView />
           </div>
@@ -377,6 +370,7 @@ function Header({
   activeView,
   routedView,
   lucyOpen,
+  portfolioOpen,
   onNavBack,
   onLogout,
   muted,
@@ -386,12 +380,14 @@ function Header({
   activeView: ViewId | null;
   routedView: ViewRoute;
   lucyOpen: boolean;
+  portfolioOpen: boolean;
   onNavBack: () => void;
   onLogout: () => void;
   muted: boolean;
   onToggleMuted: () => void;
 }) {
-  const showBack = activeView !== null || routedView !== null || lucyOpen;
+  const showBack =
+    activeView !== null || routedView !== null || lucyOpen || portfolioOpen;
   const [time, setTime] = useState("");
   useEffect(() => {
     const update = () => {
