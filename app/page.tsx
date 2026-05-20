@@ -32,6 +32,8 @@ import {
   isStopPhrase,
   isNoMorePhrase,
   detectCategoryFocus,
+  isNewsRequest,
+  categoryVoiceName,
 } from "@/lib/voice-news-intents";
 import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
 import { LucyView } from "@/views/LucyView";
@@ -125,7 +127,9 @@ export default function JarvisPage() {
     setLucyOpen(false);
     setPortfolioOpen(false);
     setNewsActiveCategory(undefined);
+    setNewsCategoriesFilter(undefined);
     loadedArticlesRef.current = null;
+    awaitingNewsCategoryRef.current = false;
     // learningOpen is an overlay — intentionally left alone so EOD can
     // layer over whatever's currently in the shell.
   }, []);
@@ -142,6 +146,14 @@ export default function JarvisPage() {
   // handleNewsConversation to drive topic-focus and category filtering.
   const loadedArticlesRef = useRef<unknown[] | null>(null);
   const [newsActiveCategory, setNewsActiveCategory] = useState<string | undefined>(undefined);
+
+  // Category filter for the upstream /api/news fetch. When set, the
+  // briefing only loads that category instead of all 8 — much faster.
+  const [newsCategoriesFilter, setNewsCategoriesFilter] = useState<string[] | undefined>(undefined);
+
+  // True after "open news" with no category — next transcript is
+  // interpreted as a category selection.
+  const awaitingNewsCategoryRef = useRef(false);
 
   // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
   useEffect(() => {
@@ -216,7 +228,11 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
-      if (!handlePresenceCheck(text) && !handleNewsConversation(text)) {
+      if (
+        !handlePresenceCheck(text) &&
+        !handleNewsRequest(text) &&
+        !handleNewsConversation(text)
+      ) {
         applyNavIntents(text);
         sendMessage(text);
       }
@@ -260,8 +276,9 @@ export default function JarvisPage() {
   };
 
   // Intercept transcripts while the news briefing view is mounted.
-  // Returns true if handled (caller should NOT route to applyNavIntents
-  // or sendMessage).
+  // Handles stop/no-more interruptions during summary playback. Topic
+  // switching is handled by handleNewsRequest below (it re-fetches just
+  // the chosen category instead of filtering the loaded set).
   const handleNewsConversation = (text: string): boolean => {
     if (routedView !== "news-briefing") return false;
 
@@ -270,17 +287,7 @@ export default function JarvisPage() {
     // "nothing" / "no more" — close view, hand back to dashboard
     if (isNoMorePhrase(lower)) {
       clearAllViews();
-      setNewsActiveCategory(undefined);
-      loadedArticlesRef.current = null;
       if (!muted) speak("Awaiting further commands, sir.");
-      return true;
-    }
-
-    // "focus on AI" / "political news" etc. — re-summarise filtered subset
-    const category = detectCategoryFocus(lower);
-    if (category && loadedArticlesRef.current) {
-      setNewsActiveCategory(category);
-      fetchAndSpeakNewsSummary(loadedArticlesRef.current, category);
       return true;
     }
 
@@ -290,6 +297,54 @@ export default function JarvisPage() {
       return true;
     }
 
+    return false;
+  };
+
+  // News request handler — runs BEFORE applyNavIntents so news intents
+  // are resolved locally (briefing opens instantly, only the requested
+  // category is fetched, no Claude round-trip needed for routing).
+  //
+  // Three trigger cases:
+  //   1. Explicit news intent + category in same utterance ("AI news",
+  //      "take me to political news") → open briefing filtered to it.
+  //   2. Explicit news intent without category ("open the briefing") →
+  //      ask "what type?" and arm awaitingNewsCategoryRef.
+  //   3. Awaiting-category mode and a category is named → load it.
+  //   4. Briefing already open + category named → switch and refetch.
+  const handleNewsRequest = (text: string): boolean => {
+    const lower = text.toLowerCase().trim();
+    const hasNewsIntent = isNewsRequest(lower);
+    const category = detectCategoryFocus(lower);
+    const briefingOpen = routedView === "news-briefing";
+    const awaiting = awaitingNewsCategoryRef.current;
+
+    // Clear awaiting state on ANY input so we don't get stuck in it
+    if (awaiting) awaitingNewsCategoryRef.current = false;
+
+    // Cases 1, 3, 4 — a category is named in a news context
+    if (category && (hasNewsIntent || awaiting || briefingOpen)) {
+      if (!briefingOpen) {
+        clearAllViews();
+      }
+      setNewsCategoriesFilter([category]);
+      setNewsActiveCategory(category);
+      setRoutedView("news-briefing");
+      if (!muted) speak(`Pulling up the latest ${categoryVoiceName(category)}, sir.`);
+      return true;
+    }
+
+    // Case 2 — news intent, no category → ask which one
+    if (hasNewsIntent) {
+      awaitingNewsCategoryRef.current = true;
+      if (!muted) {
+        speak(
+          "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?"
+        );
+      }
+      return true;
+    }
+
+    // Awaiting was true but user said something unrelated — fall through
     return false;
   };
 
@@ -318,8 +373,9 @@ export default function JarvisPage() {
     } else if (route) {
       setActiveView(route);
       const lower = text.toLowerCase();
-      if (lower.includes("news") || lower.includes("brief")) {
-        ack = "Accessing intelligence feeds, sir. This will take a moment.";
+      // News is handled by handleNewsRequest BEFORE this runs — skip it here
+      if (route === "news") {
+        // shouldn't happen in practice, but be safe
       } else if (lower.includes("invest") || lower.includes("stock")) {
         ack = "Opening investment dashboard.";
       } else if (lower.includes("task") || lower.includes("todo")) {
@@ -381,6 +437,7 @@ export default function JarvisPage() {
     setInput("");
     stopSpeaking();
     if (handlePresenceCheck(txt)) return;
+    if (handleNewsRequest(txt)) return;
     if (handleNewsConversation(txt)) return;
     applyNavIntents(txt);
     sendMessage(txt);
@@ -447,7 +504,9 @@ export default function JarvisPage() {
         ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <NewsBriefingView
+              key={newsCategoriesFilter?.join(",") ?? "all"}
               autoFetch
+              initialCategories={newsCategoriesFilter}
               activeCategory={newsActiveCategory}
               onComplete={(articles) => {
                 loadedArticlesRef.current = articles;

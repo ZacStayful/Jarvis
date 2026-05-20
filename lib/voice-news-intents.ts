@@ -46,3 +46,35 @@ export function detectCategoryFocus(lower: string): string | null {
   }
   return null;
 }
+
+// Matches an explicit news/briefing request — used by page.tsx to short-
+// circuit the news flow locally instead of waiting for Claude's routing.
+const NEWS_REQUEST_PATTERNS: RegExp[] = [
+  /\bnews\b/,
+  /\bbriefing\b/,
+  /\bheadlines?\b/,
+  /\bintelligence feed/,
+  /\bwhat'?s happening\b/,
+  /\bmorning briefing\b/,
+];
+
+export function isNewsRequest(lower: string): boolean {
+  return NEWS_REQUEST_PATTERNS.some((p) => p.test(lower));
+}
+
+// Natural spoken name for each category — avoids reading the full
+// "AI & Technology" label through TTS (the ampersand stumbles).
+const CATEGORY_VOICE_NAMES: Record<string, string> = {
+  'ai-tech': 'AI news',
+  'uk-politics': 'political news',
+  'regulatory': 'regulatory news',
+  'interest-rates': 'rates and monetary policy news',
+  'str-property': 'property and short-term rental news',
+  'competitor': 'competitor intelligence',
+  'international': 'international news',
+  'uk-business': 'UK business news',
+};
+
+export function categoryVoiceName(id: string): string {
+  return CATEGORY_VOICE_NAMES[id] ?? 'news';
+}

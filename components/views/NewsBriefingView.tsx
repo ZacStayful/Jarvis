@@ -443,9 +443,10 @@ interface NewsBriefingViewProps {
   autoFetch?: boolean;
   onComplete?: (articles: NewsArticle[]) => void;
   activeCategory?: string;
+  initialCategories?: string[];
 }
 
-export default function NewsBriefingView({ autoFetch = true, onComplete, activeCategory: activeCategoryProp }: NewsBriefingViewProps) {
+export default function NewsBriefingView({ autoFetch = true, onComplete, activeCategory: activeCategoryProp, initialCategories }: NewsBriefingViewProps) {
   const { news, fetchNewsBriefing, refreshNews } = useIntelligence();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const wasLoadingRef = useRef(false);
@@ -455,10 +456,11 @@ export default function NewsBriefingView({ autoFetch = true, onComplete, activeC
     if (activeCategoryProp) setActiveCategory(activeCategoryProp);
   }, [activeCategoryProp]);
 
-  // Auto-fetch on mount if enabled
+  // Auto-fetch on mount if enabled — narrowed by initialCategories when
+  // the user asked for a specific topic ("take me to AI news").
   useEffect(() => {
     if (autoFetch && !news.isLoading && news.articles.length === 0 && !news.error) {
-      fetchNewsBriefing();
+      fetchNewsBriefing(initialCategories);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
