@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useTTS } from "@/hooks/useTTS";
 import styles from "./login.module.css";
 
 export default function LoginPage() {
@@ -11,6 +12,15 @@ export default function LoginPage() {
   const [showInput, setShowInput] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const greetedRef = useRef(false);
+  const { speak, muted } = useTTS({
+    onEnd: () => {
+      greetedRef.current = true;
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem("jarvis_login_greeted", "true");
+      }
+    },
+  });
 
   const bootLines = [
     "JARVIS COMMAND CENTRE v1.0",
@@ -58,6 +68,43 @@ export default function LoginPage() {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [showInput]);
+
+  // Speak the JARVIS greeting on URL open. Gated by sessionStorage so a
+  // refresh in the same tab doesn't replay it. Browsers block audio
+  // autoplay before any user gesture, so we attempt on mount AND arm a
+  // one-shot keystroke/click listener as a fallback. `onEnd` in useTTS
+  // is the only signal of actual playback (the speak() promise resolves
+  // even when audio.play() rejects), so we use it to mark "done".
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem("jarvis_login_greeted") === "true") return;
+    if (muted) return;
+
+    const line = "Welcome back, sir. Awaiting authorisation.";
+    let gestureUsed = false;
+
+    const onGesture = () => {
+      if (gestureUsed || greetedRef.current) return;
+      gestureUsed = true;
+      window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("pointerdown", onGesture);
+      speak(line);
+    };
+
+    // Slight delay so the greeting lands after the boot lines start typing
+    const t = window.setTimeout(() => {
+      if (!greetedRef.current && !gestureUsed) speak(line);
+    }, 900);
+
+    window.addEventListener("keydown", onGesture);
+    window.addEventListener("pointerdown", onGesture);
+
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("pointerdown", onGesture);
+    };
+  }, [speak, muted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
