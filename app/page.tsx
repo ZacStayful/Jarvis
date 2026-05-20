@@ -28,6 +28,11 @@ import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
+import {
+  isStopPhrase,
+  isNoMorePhrase,
+  detectCategoryFocus,
+} from "@/lib/voice-news-intents";
 import { LucyView } from "@/views/LucyView";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
@@ -118,6 +123,8 @@ export default function JarvisPage() {
     setRoutedView(null);
     setLucyOpen(false);
     setPortfolioOpen(false);
+    setNewsActiveCategory(undefined);
+    loadedArticlesRef.current = null;
     // learningOpen is an overlay — intentionally left alone so EOD can
     // layer over whatever's currently in the shell.
   }, []);
@@ -128,6 +135,12 @@ export default function JarvisPage() {
   // When applyNavIntents speaks an ack, we suppress the next assistant
   // message's auto-TTS so ack + Claude's chat reply don't overlap.
   const skipNextAssistantSpeechRef = useRef(false);
+
+  // News-conversation state: cached articles + controlled UI filter.
+  // Populated when the briefing finishes loading (onComplete), used by
+  // handleNewsConversation to drive topic-focus and category filtering.
+  const loadedArticlesRef = useRef<unknown[] | null>(null);
+  const [newsActiveCategory, setNewsActiveCategory] = useState<string | undefined>(undefined);
 
   // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
   useEffect(() => {
@@ -202,8 +215,11 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
-      applyNavIntents(text);
-      sendMessage(text);
+      const handledByNews = handleNewsConversation(text);
+      if (!handledByNews) {
+        applyNavIntents(text);
+        sendMessage(text);
+      }
       // Re-arm listening after the silence-triggered stop, if always-on
       if (voiceAlwaysOn) {
         setTimeout(() => {
@@ -212,6 +228,61 @@ export default function JarvisPage() {
       }
     },
   });
+
+  // Fetch a Claude-written voice summary of the briefing (or a category
+  // subset) and speak it. Used by the briefing's onComplete and by the
+  // news-conversation handler when the user asks to focus on a topic.
+  const fetchAndSpeakNewsSummary = useCallback(
+    async (articles: unknown[], category: string | null) => {
+      try {
+        const res = await fetch("/api/news/voice-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articles, category }),
+        });
+        if (!res.ok) return;
+        const { summary } = (await res.json()) as { summary: string };
+        if (summary && !muted) speak(summary);
+      } catch {
+        // best-effort — silent on failure
+      }
+    },
+    [muted, speak]
+  );
+
+  // Intercept transcripts while the news briefing view is mounted.
+  // Returns true if handled (caller should NOT route to applyNavIntents
+  // or sendMessage).
+  const handleNewsConversation = (text: string): boolean => {
+    if (routedView !== "news-briefing") return false;
+
+    const lower = text.toLowerCase().trim();
+
+    // "nothing" / "no more" — close view, hand back to dashboard
+    if (isNoMorePhrase(lower)) {
+      clearAllViews();
+      setNewsActiveCategory(undefined);
+      loadedArticlesRef.current = null;
+      if (!muted) speak("Awaiting further commands, sir.");
+      return true;
+    }
+
+    // "focus on AI" / "political news" etc. — re-summarise filtered subset
+    const category = detectCategoryFocus(lower);
+    if (category && loadedArticlesRef.current) {
+      setNewsActiveCategory(category);
+      fetchAndSpeakNewsSummary(loadedArticlesRef.current, category);
+      return true;
+    }
+
+    // "stop" / "wait" / "pause" — ack and wait for follow-up
+    if (isStopPhrase(lower)) {
+      if (!muted) speak("Stopped, sir. What else would you like to cover?");
+      return true;
+    }
+
+    return false;
+  };
 
   // Shared nav-intent handler used by both voice and text paths. Detect
   // every possible intent, clear competing views once, then set the winner.
@@ -300,6 +371,7 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
+    if (handleNewsConversation(txt)) return;
     applyNavIntents(txt);
     sendMessage(txt);
   };
@@ -366,17 +438,11 @@ export default function JarvisPage() {
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <NewsBriefingView
               autoFetch
+              activeCategory={newsActiveCategory}
               onComplete={(articles) => {
-                if (muted) return;
-                const top = articles.slice(0, 4);
-                if (top.length === 0) return;
-                const lines = top.map(
-                  (a, i) =>
-                    `Story ${i + 1}: ${a.headline}. Stayful impact: ${a.stayfulImpact}`
-                );
-                speak(
-                  `Intelligence briefing complete. ${top.length} priority stories. ${lines.join(" — ")}`
-                );
+                loadedArticlesRef.current = articles;
+                if (articles.length === 0) return;
+                fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
               }}
             />
           </div>

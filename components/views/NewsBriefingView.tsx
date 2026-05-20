@@ -442,12 +442,18 @@ function LoadingSkeleton({ progress }: { progress: string }) {
 interface NewsBriefingViewProps {
   autoFetch?: boolean;
   onComplete?: (articles: NewsArticle[]) => void;
+  activeCategory?: string;
 }
 
-export default function NewsBriefingView({ autoFetch = true, onComplete }: NewsBriefingViewProps) {
+export default function NewsBriefingView({ autoFetch = true, onComplete, activeCategory: activeCategoryProp }: NewsBriefingViewProps) {
   const { news, fetchNewsBriefing, refreshNews } = useIntelligence();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const wasLoadingRef = useRef(false);
+
+  // Sync external activeCategory prop into local state (voice "focus on AI")
+  useEffect(() => {
+    if (activeCategoryProp) setActiveCategory(activeCategoryProp);
+  }, [activeCategoryProp]);
 
   // Auto-fetch on mount if enabled
   useEffect(() => {
