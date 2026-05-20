@@ -33,6 +33,7 @@ import {
   isNoMorePhrase,
   detectCategoryFocus,
 } from "@/lib/voice-news-intents";
+import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
 import { LucyView } from "@/views/LucyView";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
@@ -215,8 +216,7 @@ export default function JarvisPage() {
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       stopSpeaking();
-      const handledByNews = handleNewsConversation(text);
-      if (!handledByNews) {
+      if (!handlePresenceCheck(text) && !handleNewsConversation(text)) {
         applyNavIntents(text);
         sendMessage(text);
       }
@@ -249,6 +249,15 @@ export default function JarvisPage() {
     },
     [muted, speak]
   );
+
+  // Presence check — "are you there?", "Jarvis?", "can you hear me?".
+  // Local intercept so JARVIS replies instantly instead of waiting for
+  // a Claude round-trip. Returns true if handled.
+  const handlePresenceCheck = (text: string): boolean => {
+    if (!isPresenceCheck(text)) return false;
+    if (!muted) speak(presenceResponse());
+    return true;
+  };
 
   // Intercept transcripts while the news briefing view is mounted.
   // Returns true if handled (caller should NOT route to applyNavIntents
@@ -371,6 +380,7 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
+    if (handlePresenceCheck(txt)) return;
     if (handleNewsConversation(txt)) return;
     applyNavIntents(txt);
     sendMessage(txt);
