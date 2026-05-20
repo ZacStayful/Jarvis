@@ -33,6 +33,7 @@ import {
   isNoMorePhrase,
   detectCategoryFocus,
   isNewsRequest,
+  isSummariseRequest,
   categoryVoiceName,
 } from "@/lib/voice-news-intents";
 import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
@@ -314,12 +315,31 @@ export default function JarvisPage() {
   const handleNewsRequest = (text: string): boolean => {
     const lower = text.toLowerCase().trim();
     const hasNewsIntent = isNewsRequest(lower);
+    const hasSummariseIntent = isSummariseRequest(lower);
     const category = detectCategoryFocus(lower);
     const briefingOpen = routedView === "news-briefing";
     const awaiting = awaitingNewsCategoryRef.current;
 
     // Clear awaiting state on ANY input so we don't get stuck in it
     if (awaiting) awaitingNewsCategoryRef.current = false;
+
+    // SUMMARISE while briefing is already open — re-speak a summary of
+    // whatever's currently on screen instead of asking "what type?".
+    // If a *different* category is named, fall through to the switch
+    // branch below (which will refetch and onComplete will narrate it).
+    if (
+      briefingOpen &&
+      hasSummariseIntent &&
+      (!category || category === newsActiveCategory)
+    ) {
+      const articles = loadedArticlesRef.current;
+      if (articles && articles.length > 0) {
+        fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
+      } else if (!muted) {
+        speak("One moment, sir — still pulling the feeds.");
+      }
+      return true;
+    }
 
     // Cases 1, 3, 4 — a category is named in a news context
     if (category && (hasNewsIntent || awaiting || briefingOpen)) {

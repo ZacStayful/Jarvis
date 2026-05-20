@@ -62,6 +62,25 @@ export function isNewsRequest(lower: string): boolean {
   return NEWS_REQUEST_PATTERNS.some((p) => p.test(lower));
 }
 
+// Matches an explicit "summarise / recap" intent. Used by page.tsx so
+// that asking "summarise the news" when the briefing is already open
+// re-speaks the summary of whatever's on screen instead of triggering
+// the "what type of news?" prompt.
+const SUMMARISE_PATTERNS: RegExp[] = [
+  /\bsummari[sz]e\b/,
+  /\bsummary\b/,
+  /\brecap\b/,
+  /\bgo (through|over)\b/,
+  /\brun (through|me through)\b/,
+  /\bread (it|this|them|through|out|to me)\b/,
+  /\btell me about (it|this|these|the news)\b/,
+  /\bwalk me through\b/,
+];
+
+export function isSummariseRequest(lower: string): boolean {
+  return SUMMARISE_PATTERNS.some((p) => p.test(lower));
+}
+
 // Natural spoken name for each category — avoids reading the full
 // "AI & Technology" label through TTS (the ampersand stumbles).
 const CATEGORY_VOICE_NAMES: Record<string, string> = {
