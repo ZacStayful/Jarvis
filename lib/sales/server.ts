@@ -45,12 +45,17 @@ export function isPopulated(item: any, colId: string): boolean {
 }
 
 // ── Module-level cache so chunk endpoints don't each re-paginate ────────
+// Single-flight: if a pagination for a given range is already in progress,
+// concurrent callers await the same promise instead of starting their own.
+// Without this, the four dashboard chunks firing in parallel each trigger
+// their own pagination, blowing Monday's 5-req/sec rate limit.
 
 interface LeadsCacheEntry {
   items: any[];
   fetchedAt: number;
 }
 const leadsCache = new Map<string, LeadsCacheEntry>();
+const inflightLeads = new Map<string, Promise<any[]>>();
 const LEADS_TTL_MS = 5 * 60 * 1000;
 
 const COLUMN_IDS = [
@@ -73,19 +78,13 @@ const COLUMN_IDS = [
   COL.dateBecameCustomer,
 ];
 
-export async function fetchAllLeads({
+async function paginateLeads({
   from,
   to,
 }: {
   from: string | null;
   to: string | null;
 }): Promise<any[]> {
-  const key = `${from || ''}|${to || ''}`;
-  const cached = leadsCache.get(key);
-  if (cached && Date.now() - cached.fetchedAt < LEADS_TTL_MS) {
-    return cached.items;
-  }
-
   const columnIds = COLUMN_IDS.map((id) => `"${id}"`).join(', ');
 
   let allItems: any[] = [];
@@ -147,8 +146,38 @@ export async function fetchAllLeads({
     });
   }
 
-  leadsCache.set(key, { items: allItems, fetchedAt: Date.now() });
   return allItems;
+}
+
+export async function fetchAllLeads({
+  from,
+  to,
+}: {
+  from: string | null;
+  to: string | null;
+}): Promise<any[]> {
+  const key = `${from || ''}|${to || ''}`;
+
+  const cached = leadsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < LEADS_TTL_MS) {
+    return cached.items;
+  }
+
+  const existing = inflightLeads.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const items = await paginateLeads({ from, to });
+      leadsCache.set(key, { items, fetchedAt: Date.now() });
+      return items;
+    } finally {
+      inflightLeads.delete(key);
+    }
+  })();
+
+  inflightLeads.set(key, promise);
+  return promise;
 }
 
 // ── activity_logs probe ─────────────────────────────────────────────────
@@ -158,27 +187,36 @@ interface ProbeCache {
   checkedAt: number;
 }
 let activityProbe: ProbeCache | null = null;
+let activityProbeInflight: Promise<boolean> | null = null;
 const PROBE_TTL_MS = 10 * 60 * 1000;
 
 export async function probeActivityLogs(): Promise<boolean> {
   if (activityProbe && Date.now() - activityProbe.checkedAt < PROBE_TTL_MS) {
     return activityProbe.available;
   }
-  try {
-    const probeQuery = `{
-      boards(ids: [${MANAGEMENT_LEADS_BOARD}]) {
-        activity_logs(limit: 1) { id }
-      }
-    }`;
-    const data = await mondayQuery(probeQuery);
-    const logs = data?.boards?.[0]?.activity_logs;
-    const available = Array.isArray(logs);
-    activityProbe = { available, checkedAt: Date.now() };
-    return available;
-  } catch {
-    activityProbe = { available: false, checkedAt: Date.now() };
-    return false;
-  }
+  if (activityProbeInflight) return activityProbeInflight;
+
+  activityProbeInflight = (async () => {
+    try {
+      const probeQuery = `{
+        boards(ids: [${MANAGEMENT_LEADS_BOARD}]) {
+          activity_logs(limit: 1) { id }
+        }
+      }`;
+      const data = await mondayQuery(probeQuery);
+      const logs = data?.boards?.[0]?.activity_logs;
+      const available = Array.isArray(logs);
+      activityProbe = { available, checkedAt: Date.now() };
+      return available;
+    } catch {
+      activityProbe = { available: false, checkedAt: Date.now() };
+      return false;
+    } finally {
+      activityProbeInflight = null;
+    }
+  })();
+
+  return activityProbeInflight;
 }
 
 // ── Activity Log board (custom-populated, works on any plan) ────────────
