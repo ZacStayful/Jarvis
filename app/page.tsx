@@ -28,6 +28,7 @@ import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
+import { detectSalesCommand } from "@/lib/sales/commands";
 import { LucyView } from "@/views/LucyView";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
@@ -211,6 +212,14 @@ export default function JarvisPage() {
   // doesn't disturb the underlying view.
   const applyNavIntents = (text: string) => {
     if (isEODCommand(text)) setLearningOpen(true);
+
+    // Sales takes precedence over Lucy — "pipeline" / "sales" route to the
+    // new standalone /sales dashboard rather than the legacy Lucy / leads view.
+    const sales = detectSalesCommand(text);
+    if (sales === 'navigate') {
+      router.push('/sales');
+      return;
+    }
 
     const lucy = detectLucyCommand(text);
     const portfolio = detectPortfolioCommand(text);

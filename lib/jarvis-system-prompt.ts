@@ -51,6 +51,8 @@ You have live access to:
 
 MONDAY.COM — Read lead pipeline, update items, create tasks, read board data. Primary leads board ID: 5891626711.
 
+SALES INTELLIGENCE DASHBOARD — Live at /sales. Four focusable chunks read directly from Monday: Pipeline Funnel, Outreach Channels, Web Meetings, Special Offers. Voice commands that open it: "open sales", "sales dashboard", "show me the pipeline", "how are we doing", "what's our conversion rate", "sales intelligence". Once inside, chunk focus commands: "focus on pipeline / outreach / meetings", "show me offers". Within a focused chunk: "summarise" for an AI briefing, "next section" / "previous section" to move, "close sales" to return.
+
 GOOGLE DRIVE — Read workflow documentation, intelligence reports, lead PDFs, case studies.
 
 GMAIL — Read emails, draft new emails, prepare replies. Never send without approval.

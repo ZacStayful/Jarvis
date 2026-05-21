@@ -34,8 +34,9 @@ const COMMANDS: Record<string, ViewId> = {
   'portfolio':       'investments',
   'stocks':          'investments',
   'leads':           'leads',
-  'sales':           'leads',
-  'pipeline':        'leads',
+  // 'sales' / 'pipeline' now route to the standalone /sales dashboard
+  // (see lib/sales/commands.ts + app/page.tsx). They are intentionally
+  // omitted from this map so the legacy inline LeadsView no longer catches them.
   'tasks':           'tasks',
   'to do':           'tasks',
   'intelligence':    'intelligence',
