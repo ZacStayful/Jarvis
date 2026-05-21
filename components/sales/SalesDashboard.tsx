@@ -316,6 +316,8 @@ export function SalesDashboard() {
               pipeline={pipeline.data}
               total={pipeline.meta?.total ?? 0}
               range={range}
+              speak={tts.speak}
+              isSpeaking={tts.isSpeaking}
             />
           )}
         </Chunk>

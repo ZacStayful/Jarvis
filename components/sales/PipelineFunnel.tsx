@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { S } from "./styles";
 import { KPI } from "./KPI";
 import type { DateRange, PipelineMetrics, SalesMetrics } from "./types";
@@ -9,9 +9,17 @@ interface Props {
   pipeline: PipelineMetrics;
   total: number;
   range: DateRange;
+  speak?: (text: string) => Promise<void>;
+  isSpeaking?: boolean;
 }
 
-export function PipelineFunnel({ pipeline: p, total, range }: Props) {
+export function PipelineFunnel({
+  pipeline: p,
+  total,
+  range,
+  speak,
+  isSpeaking,
+}: Props) {
   const funnelSteps = [
     { label: "Cold Leads", value: p.cold, pct: 100, color: S.green },
     {
@@ -120,15 +128,24 @@ export function PipelineFunnel({ pipeline: p, total, range }: Props) {
           </div>
         ))}
       </div>
-      <AISummaryCard range={range} />
+      <AISummaryCard range={range} speak={speak} isSpeaking={isSpeaking} />
     </>
   );
 }
 
-function AISummaryCard({ range }: { range: DateRange }) {
+function AISummaryCard({
+  range,
+  speak,
+  isSpeaking,
+}: {
+  range: DateRange;
+  speak?: (text: string) => Promise<void>;
+  isSpeaking?: boolean;
+}) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const spokenForKey = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +178,25 @@ function AISummaryCard({ range }: { range: DateRange }) {
     };
   }, [range.from, range.to]);
 
+  // Speak the summary once per (date-range, summary) combo. If the browser
+  // hasn't had a user gesture yet, useTTS will silently no-op — clicking
+  // the voice pill (or the "Speak again" button below) gives the gesture
+  // and unblocks future plays.
+  useEffect(() => {
+    if (!speak || !summary) return;
+    const key = `${range.from || ""}|${range.to || ""}|${summary.slice(0, 32)}`;
+    if (spokenForKey.current === key) return;
+    spokenForKey.current = key;
+    speak(summary).catch(() => {
+      // Autoplay blocked — user can hit "Speak again" to retry.
+    });
+  }, [summary, range.from, range.to, speak]);
+
+  const handleSpeakAgain = () => {
+    if (!speak || !summary) return;
+    speak(summary).catch(() => {});
+  };
+
   return (
     <div
       style={{
@@ -191,10 +227,32 @@ function AISummaryCard({ range }: { range: DateRange }) {
             height: 6,
             borderRadius: "50%",
             background: S.green,
-            animation: loading ? "pulse 1.5s ease infinite" : "none",
+            animation:
+              loading || isSpeaking ? "pulse 1.5s ease infinite" : "none",
           }}
         />
-        JARVIS Briefing
+        <span>JARVIS Briefing</span>
+        {summary && speak && (
+          <button
+            type="button"
+            onClick={handleSpeakAgain}
+            disabled={isSpeaking}
+            className="mono"
+            style={{
+              marginLeft: "auto",
+              background: isSpeaking ? S.greenPale : "transparent",
+              border: `1px solid ${S.border}`,
+              color: isSpeaking ? S.greenHi : S.textDim,
+              fontSize: 8,
+              letterSpacing: "0.12em",
+              padding: "3px 9px",
+              borderRadius: 999,
+              cursor: isSpeaking ? "default" : "pointer",
+            }}
+          >
+            {isSpeaking ? "SPEAKING…" : "▶ SPEAK"}
+          </button>
+        )}
       </div>
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
