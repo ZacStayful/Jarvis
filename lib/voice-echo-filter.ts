@@ -7,18 +7,27 @@
 //
 // This filter compares a partial transcript against the text JARVIS is
 // currently speaking. If they overlap enough, the partial is treated
-// as echo and ignored. Otherwise it's treated as real user speech and
-// the caller should stop TTS.
+// as echo. The caller decides what to do with the verdict.
 //
-// Tuned for the trade-off:
-// - Generous about flagging echo (false positives = JARVIS doesn't
-//   stop when you want it to — recoverable by pressing Escape or
-//   speaking longer/unique content).
-// - Strict about flagging real speech (false negatives = JARVIS
-//   self-interrupts — annoying and breaks the conversation).
+// CRITICAL DESIGN RULE: the filter is intentionally CONSERVATIVE about
+// flagging echo — it would rather let a real echo through than block a
+// legitimate user response. A blocked response (false positive) is a
+// total UX failure: JARVIS appears to ignore the user. An unblocked
+// echo (false negative) is a minor glitch: JARVIS may self-interrupt
+// or respond to its own voice once, then continue.
+//
+// Specifically this filter MUST NOT flag short user responses that
+// happen to share words with JARVIS's spoken text (e.g., answering
+// "political news" to "what type of news would you like, sir? AI,
+// political, regulatory…"). The caller should additionally gate the
+// filter on `isSpeaking` for final transcripts — see app/page.tsx.
 
 function normalise(text: string): string {
   return text.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function isLikelyEcho(partial: string, spoken: string): boolean {
@@ -27,20 +36,41 @@ export function isLikelyEcho(partial: string, spoken: string): boolean {
   const p = normalise(partial);
   const s = normalise(spoken);
 
-  // Too short to judge — treat as echo to avoid spurious interrupts
-  // from one- or two-character noise blips.
+  // Too short to judge — treat as noise (and echo, so the caller skips
+  // it). Tiny < 3-char partials from the recogniser are usually fleeting
+  // and will be replaced by longer partials within milliseconds.
   if (p.length < 3) return true;
 
-  // Strong signal: partial appears verbatim inside the spoken text.
-  if (s.includes(p)) return true;
+  // Strong signal: partial appears as a whole word/phrase inside the
+  // spoken text. We use word-boundary matching so "wait" doesn't match
+  // inside "awaiting" — that was previously blocking legitimate
+  // interrupts.
+  const phraseBoundary = new RegExp(`\\b${escapeRegex(p)}\\b`);
+  if (phraseBoundary.test(s)) return true;
 
-  // Word-overlap fallback: if 60%+ of partial words appear anywhere in
-  // the spoken text and there are at least 2 partial words, treat as
-  // echo. Catches recogniser mis-hearings of JARVIS's own voice where
-  // the substring check fails because of one or two transcribed words
-  // being wrong.
+  // Word-overlap fallback with CONTIGUITY requirement: at least one
+  // adjacent two-word phrase from the partial must appear contiguously
+  // in the spoken text. Without this, a 2-word user response like
+  // "political news" gets flagged as echo of "…AI, political,
+  // regulatory…" simply because both words appear somewhere.
   const pWords = p.split(' ').filter((w) => w.length > 1);
   if (pWords.length < 2) return false;
-  const matches = pWords.filter((w) => s.includes(w)).length;
-  return matches / pWords.length >= 0.6;
+
+  let hasContiguousBigram = false;
+  for (let i = 0; i < pWords.length - 1; i++) {
+    const bigram = `${pWords[i]} ${pWords[i + 1]}`;
+    const bigramBoundary = new RegExp(`\\b${escapeRegex(bigram)}\\b`);
+    if (bigramBoundary.test(s)) {
+      hasContiguousBigram = true;
+      break;
+    }
+  }
+  if (!hasContiguousBigram) return false;
+
+  // Contiguous match confirmed AND word overlap is high (≥70%) → echo.
+  const matches = pWords.filter((w) => {
+    const wb = new RegExp(`\\b${escapeRegex(w)}\\b`);
+    return wb.test(s);
+  }).length;
+  return matches / pWords.length >= 0.7;
 }

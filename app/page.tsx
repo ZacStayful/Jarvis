@@ -229,11 +229,14 @@ export default function JarvisPage() {
 
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
-      // Echo filter: if the final transcript looks like JARVIS's own
-      // voice picked up via the mic, drop it silently. Don't stop
-      // speaking (echo arriving mid-summary shouldn't kill the
-      // summary) and don't route it as a command.
-      if (isLikelyEcho(text, spokenText)) {
+      // Echo filter ONLY runs while JARVIS is actively speaking. Once
+      // JARVIS has stopped, the user's response is the real signal —
+      // even if it shares words with the question JARVIS just asked
+      // (e.g., answering "political news" to "what type of news?").
+      // Without this gate, legitimate responses were being silently
+      // dropped because they contained category words JARVIS had just
+      // listed.
+      if (isSpeaking && isLikelyEcho(text, spokenText)) {
         if (voiceAlwaysOn) {
           setTimeout(() => {
             startListening().catch(() => {});

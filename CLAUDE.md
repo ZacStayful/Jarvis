@@ -130,22 +130,30 @@ JARVIS's own voice. The echo filter is `isLikelyEcho` in
 specifically for this purpose). If the partial looks like our own
 voice picked up via mic bleed-through, it's discarded.
 
-The same filter is applied to the `onFinalTranscript` path so a
-delayed echo finalisation doesn't get routed to `sendMessage` and
-processed by Claude. If a transcript is judged echo there, we skip
-*before* `stopSpeaking()` (so an echo arriving mid-summary doesn't
-kill the summary).
+The filter is also applied to `onFinalTranscript` **only while
+`isSpeaking` is true**. Once JARVIS has stopped, accept everything —
+otherwise a legitimate user response that shares words with the
+question JARVIS just asked (e.g. "political news" answering "what
+type of news? AI, political, regulatory…") gets silently dropped.
+This was a real bug shipped briefly in `ec5ac06`; the gate fix lives
+in `onFinalTranscript` in `app/page.tsx`.
 
-Filter heuristic (in order):
-1. Reject partials < 3 chars (noise).
-2. Reject if partial appears verbatim inside the spoken text.
-3. Reject if 60%+ of partial words appear in the spoken text and
-   partial has ≥2 words (catches recogniser mis-hearings).
+Filter heuristic (`isLikelyEcho` in `lib/voice-echo-filter.ts`):
+1. Reject partials < 3 chars (noise / transient recogniser output).
+2. Match: partial appears as a whole word/phrase in spoken text
+   (uses `\b` regex boundaries — so "wait" doesn't match inside
+   "awaiting").
+3. Fallback: 70%+ of partial words appear in spoken text AND at
+   least one adjacent 2-word phrase from the partial appears
+   contiguously in spoken text. The contiguity requirement prevents
+   2-word user responses being flagged just because both words happen
+   to appear separately somewhere in the prompt.
 4. Otherwise treat as real user speech and interrupt.
 
-If you change the filter, keep the bias asymmetric: false positives
-(JARVIS doesn't stop when you want) are recoverable via Escape key.
-False negatives (JARVIS self-interrupts) break the conversation.
+CRITICAL: keep the bias asymmetric in favour of the user. A blocked
+response (false positive) makes JARVIS look broken. An echo that
+slips through (false negative) is a one-time glitch. If you tighten
+the filter, run through the "political news" case mentally first.
 
 ---
 
