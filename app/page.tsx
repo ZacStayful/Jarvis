@@ -28,6 +28,7 @@ import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
+import { detectSalesCommand } from "@/lib/sales/commands";
 import {
   isStopPhrase,
   isNoMorePhrase,
@@ -409,6 +410,11 @@ export default function JarvisPage() {
   const applyNavIntents = (text: string) => {
     if (isEODCommand(text)) setLearningOpen(true);
 
+    const sales = detectSalesCommand(text);
+    if (sales === 'navigate') {
+      router.push('/sales');
+      return;
+    }
     const lucy = detectLucyCommand(text);
     const portfolio = detectPortfolioCommand(text);
     const route = routeCommand(text);
