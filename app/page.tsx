@@ -37,6 +37,7 @@ import {
   categoryVoiceName,
 } from "@/lib/voice-news-intents";
 import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
+import { isLikelyEcho } from "@/lib/voice-echo-filter";
 import { LucyView } from "@/views/LucyView";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
@@ -82,7 +83,7 @@ export default function JarvisPage() {
   // Phase 8's client-side ElevenLabs streaming is intentionally disabled
   // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
   // ElevenLabs env vars are added in Vercel.
-  const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
+  const { speak, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
 
   // Phase 8 — load cross-session context block to inject into the system prompt
   const crossSession = useCrossSessionContext();
@@ -228,6 +229,18 @@ export default function JarvisPage() {
 
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
+      // Echo filter: if the final transcript looks like JARVIS's own
+      // voice picked up via the mic, drop it silently. Don't stop
+      // speaking (echo arriving mid-summary shouldn't kill the
+      // summary) and don't route it as a command.
+      if (isLikelyEcho(text, spokenText)) {
+        if (voiceAlwaysOn) {
+          setTimeout(() => {
+            startListening().catch(() => {});
+          }, 600);
+        }
+        return;
+      }
       stopSpeaking();
       if (
         !handlePresenceCheck(text) &&
@@ -250,13 +263,19 @@ export default function JarvisPage() {
   // detects the user has started talking. partialTranscript fires in
   // real-time as the Web Speech API emits interim results — much
   // earlier than onFinalTranscript (which waits 1.5s of silence).
-  // Without this, you'd have to finish your sentence before JARVIS
-  // would stop, which isn't how a real conversation works.
+  //
+  // The echo filter compares the partial against the text JARVIS is
+  // currently speaking (exposed via useTTS.currentText). If the partial
+  // looks like our own voice picked up via the mic, we ignore it —
+  // otherwise JARVIS would self-interrupt the moment its own audio
+  // bled back through the speakers.
   useEffect(() => {
-    if (isSpeaking && partialTranscript.trim().length > 0) {
-      stopSpeaking();
-    }
-  }, [partialTranscript, isSpeaking, stopSpeaking]);
+    if (!isSpeaking) return;
+    const partial = partialTranscript.trim();
+    if (partial.length === 0) return;
+    if (isLikelyEcho(partial, spokenText)) return;
+    stopSpeaking();
+  }, [partialTranscript, isSpeaking, stopSpeaking, spokenText]);
 
   // Fetch a Claude-written voice summary of the briefing (or a category
   // subset) and speak it. Used by the briefing's onComplete and by the

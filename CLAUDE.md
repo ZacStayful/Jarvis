@@ -123,17 +123,29 @@ this** — Claude never replies, so nothing to muzzle.
 ## Barge-in (interrupt JARVIS by speaking)
 
 A `useEffect` in `app/page.tsx` watches `useVoiceInput.partialTranscript`
-and calls `stopSpeaking()` whenever it becomes non-empty while
-`isSpeaking` is true. This gives true conversational interrupt —
-JARVIS halts the moment the recogniser detects you've started
-talking, not after you finish a sentence.
+and calls `stopSpeaking()` whenever a partial arrives that *isn't*
+JARVIS's own voice. The echo filter is `isLikelyEcho` in
+`lib/voice-echo-filter.ts` — it compares the partial against
+`useTTS.currentText` (the text currently being spoken, exposed
+specifically for this purpose). If the partial looks like our own
+voice picked up via mic bleed-through, it's discarded.
 
-Don't replace this with a `onFinalTranscript`-based stop: that fires
-only after 1.5s of trailing silence, which is too late for natural
-turn-taking. Echo from speaker → mic can occasionally produce a
-spurious partial during JARVIS playback; if this becomes a problem,
-add a minimum-length threshold (≥3 chars) or a 300ms grace window
-after `speak()` starts before honouring partials.
+The same filter is applied to the `onFinalTranscript` path so a
+delayed echo finalisation doesn't get routed to `sendMessage` and
+processed by Claude. If a transcript is judged echo there, we skip
+*before* `stopSpeaking()` (so an echo arriving mid-summary doesn't
+kill the summary).
+
+Filter heuristic (in order):
+1. Reject partials < 3 chars (noise).
+2. Reject if partial appears verbatim inside the spoken text.
+3. Reject if 60%+ of partial words appear in the spoken text and
+   partial has ≥2 words (catches recogniser mis-hearings).
+4. Otherwise treat as real user speech and interrupt.
+
+If you change the filter, keep the bias asymmetric: false positives
+(JARVIS doesn't stop when you want) are recoverable via Escape key.
+False negatives (JARVIS self-interrupts) break the conversation.
 
 ---
 
