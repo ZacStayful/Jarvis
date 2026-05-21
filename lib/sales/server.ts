@@ -15,8 +15,16 @@ import {
 const MONDAY_URL = 'https://api.monday.com/v2';
 
 export async function mondayQuery(query: string): Promise<any> {
-  const token = process.env.MONDAY_API_TOKEN;
-  if (!token) throw new Error('MONDAY_API_TOKEN not set');
+  // Accept either env var name. The Lucy routes use MONDAY_API_KEY; the
+  // sales spec calls for MONDAY_API_TOKEN. Try TOKEN first, fall back to
+  // KEY so a single Monday token works regardless of which name is set
+  // in Vercel.
+  const token = process.env.MONDAY_API_TOKEN || process.env.MONDAY_API_KEY;
+  if (!token) {
+    throw new Error(
+      'Monday API token not set (expected MONDAY_API_TOKEN or MONDAY_API_KEY)',
+    );
+  }
   const res = await fetch(MONDAY_URL, {
     method: 'POST',
     headers: {
