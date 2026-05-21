@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ArrowRight } from "lucide-react";
 import { C } from "@/lib/jarvis-design";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useTTS } from "@/hooks/useTTS";
 
 /* ─── Palette ─── */
 const S = {
@@ -79,6 +81,48 @@ export function SalesDashboard() {
   const [preset, setPreset] = useState<"week" | "month" | "year" | "custom">("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [autoSummary, setAutoSummary] = useState<string | null>(null);
+  const [autoSummaryLoading, setAutoSummaryLoading] = useState(false);
+  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
+
+  const { speak, isSpeaking, muted } = useTTS();
+
+  const handleVoiceCommand = useCallback(async (text: string) => {
+    const lower = text.toLowerCase().trim();
+
+    // Navigation commands
+    if (/\b(close|go back|back|exit|home)\b/.test(lower)) {
+      router.push('/');
+      return;
+    }
+    if (/\bpipeline\b/.test(lower)) { setFocusedChunk('funnel'); return; }
+    if (/\boutreach\b/.test(lower)) { setFocusedChunk('outreach'); return; }
+    if (/\bmeetings?\b/.test(lower)) { setFocusedChunk('meetings'); return; }
+    if (/\boffer/.test(lower) && !/summarise|summary/.test(lower)) {
+      setFocusedChunk('offers'); return;
+    }
+
+    // Any other spoken input — treat as a question for JARVIS
+    if (!metrics) return;
+    try {
+      const res = await fetch('/api/sales/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metrics, question: text }),
+      });
+      const data = await res.json();
+      if (data.summary && !muted) {
+        speak(data.summary);
+      }
+      setLastAnswer(data.summary || '');
+    } catch {}
+  }, [metrics, muted, speak, router]);
+
+  const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
+    onFinalTranscript: (text) => {
+      handleVoiceCommand(text);
+    },
+  });
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -123,6 +167,53 @@ export function SalesDashboard() {
 
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
 
+  // Auto-start listening when the sales page loads
+  useEffect(() => {
+    const t = setTimeout(() => {
+      startListening().catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Stop listening while JARVIS is speaking to prevent echo, resume after.
+  useEffect(() => {
+    if (isSpeaking && isListening) stopListening();
+    if (!isSpeaking && !isListening) {
+      const t = setTimeout(() => startListening().catch(() => {}), 400);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpeaking, isListening]);
+
+  // Fetch an auto-briefing once metrics first arrive.
+  useEffect(() => {
+    if (!metrics) return;
+    let cancelled = false;
+    setAutoSummaryLoading(true);
+    fetch('/api/sales/summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metrics }),
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok || body.error) throw new Error(body.error || `HTTP ${r.status}`);
+        return body;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setAutoSummary(data.summary || null);
+      })
+      .catch(() => {
+        if (!cancelled) setAutoSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAutoSummaryLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [metrics]);
+
   return (
     <div style={{ minHeight: "100vh", background: S.bg, color: S.text, fontFamily: "Rajdhani, sans-serif" }}>
       {/* Header */}
@@ -158,6 +249,15 @@ export function SalesDashboard() {
           </div>
         ) : (
           <>
+            <JarvisQueryPanel
+              autoSummary={autoSummary}
+              autoSummaryLoading={autoSummaryLoading}
+              lastAnswer={lastAnswer}
+              isListening={isListening}
+              isSpeaking={isSpeaking}
+              muted={muted}
+              partialTranscript={partialTranscript}
+            />
             <Chunk id="funnel" index="01" name="Sales Funnel" focused={focusedChunk === "funnel"} onClick={() => setFocusedChunk("funnel")} loading={loading}>
               {metrics && <SalesFunnel m={metrics} />}
             </Chunk>
@@ -181,6 +281,123 @@ export function SalesDashboard() {
         @keyframes fadeUp { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)} }
       `}</style>
     </div>
+  );
+}
+
+/* ─── JARVIS Query Panel (voice-first) ─── */
+function JarvisQueryPanel({
+  autoSummary,
+  autoSummaryLoading,
+  lastAnswer,
+  isListening,
+  isSpeaking,
+  muted,
+  partialTranscript,
+}: {
+  autoSummary: string | null;
+  autoSummaryLoading: boolean;
+  lastAnswer: string | null;
+  isListening: boolean;
+  isSpeaking: boolean;
+  muted: boolean;
+  partialTranscript: string;
+}) {
+  const status = isSpeaking
+    ? "SPEAKING"
+    : isListening
+      ? "LISTENING"
+      : "READY";
+  const dotColor = isSpeaking
+    ? S.greenHi
+    : isListening
+      ? S.green
+      : S.amber;
+  const animating = isSpeaking || isListening;
+
+  return (
+    <section
+      style={{
+        margin: "20px 28px 24px",
+        background: "linear-gradient(180deg, rgba(93,129,86,0.06), rgba(93,129,86,0.02))",
+        border: `1px solid ${S.borderHi}`,
+        borderRadius: 10,
+        padding: "18px 20px",
+        position: "relative",
+      }}
+    >
+      {/* Header row: title + voice status pill */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: S.greenHi, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: S.green, animation: autoSummaryLoading ? "pulse 1.5s ease infinite" : "none" }} />
+          JARVIS Briefing
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "rgba(13, 20, 13, 0.92)",
+            border: `1px solid ${isListening || isSpeaking ? S.borderHi : S.border}`,
+            borderRadius: 999,
+            padding: "5px 14px",
+          }}
+        >
+          <div
+            style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: dotColor,
+              animation: animating ? "pulse 1.5s ease infinite" : "none",
+            }}
+          />
+          <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: isListening || isSpeaking ? S.greenHi : S.textDim }}>
+            {muted && isListening ? `${status} · MUTED` : status}
+          </span>
+        </div>
+      </div>
+
+      {/* Auto-summary text */}
+      {autoSummaryLoading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+          {[88, 96, 72].map((w, i) => (
+            <div key={i} style={{ height: 10, width: `${w}%`, background: S.surface2, borderRadius: 4, animation: "pulse 1.5s ease infinite" }} />
+          ))}
+        </div>
+      )}
+      {!autoSummaryLoading && autoSummary && (
+        <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: 14, color: S.text, lineHeight: 1.55, letterSpacing: "0.01em", marginBottom: lastAnswer ? 16 : 12 }}>
+          {autoSummary}
+        </div>
+      )}
+      {!autoSummaryLoading && !autoSummary && (
+        <div className="mono" style={{ fontSize: 11, color: S.textMuted, marginBottom: 12 }}>
+          Briefing unavailable. Ask a question by voice to query the pipeline.
+        </div>
+      )}
+
+      {/* Last spoken answer */}
+      {lastAnswer && (
+        <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 12, marginBottom: 12 }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.18em", color: S.textDim, textTransform: "uppercase", marginBottom: 6 }}>
+            Last answer
+          </div>
+          <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: 13, color: S.text, lineHeight: 1.55 }}>
+            {lastAnswer}
+          </div>
+        </div>
+      )}
+
+      {/* Partial transcript preview while listening */}
+      {isListening && partialTranscript && (
+        <div className="mono" style={{ fontSize: 10, color: S.greenDim, marginBottom: 8, fontStyle: "italic" }}>
+          “{partialTranscript}”
+        </div>
+      )}
+
+      {/* Instruction */}
+      <div className="mono" style={{ fontSize: 9, letterSpacing: "0.1em", color: S.textMuted, borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
+        Say your question aloud — JARVIS will respond by voice.
+      </div>
+    </section>
   );
 }
 
