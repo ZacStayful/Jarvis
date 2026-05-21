@@ -1,9 +1,16 @@
 // app/api/sales/route.ts
-// Management Leads board (5891626711) — group-based counting.
-// Board is organised by GROUPS (pipeline stages). The "date" column
-// = Date Added to board. Used for all period-based calculations.
-// There is no dedicated "web meeting date" column — proximity logic:
-// leads added in period AND now in web meeting groups = had meeting in period.
+// Management Leads board (5891626711) — definitive implementation.
+// ALL metrics verified against real board data and confirmed with Zac.
+//
+// KEY FACTS:
+// - Every lead starts in Cold Management Leads (topics group)
+// - created_at = when lead entered board = accurate total lead count
+// - file_mm1daxvv files array length = answered calls per lead
+// - numeric_mm2tj6ny = unanswered call count
+// - Emails = count of populated date columns: sent + FU1 + FU2
+// - Warm AND Special offer = attended web meeting
+// - text_mm3h5atf populated = had web meeting (only accurate from recent automation)
+// - Engagement = long_text_mm2pse8d populated (lead answered presentation questions)
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -13,34 +20,39 @@ export const dynamic = "force-dynamic";
 const BOARD_ID = "5891626711";
 const MONDAY_URL = "https://api.monday.com/v2";
 
-// Pipeline stage groups
+// Pipeline stage groups — confirmed board structure
 const G = {
-  maintenance: "group_mkwhk3z9",     // excluded from all metrics
-  cold: "topics",                    // Cold Management Leads (holding pen)
-  qualified: "group_mm28ypgs",       // Qualified Management Leads
-  futureFromCall: "group_mm1htyz7",  // In the future Due to call
-  futureGeneral: "group_mkwthdxq",   // In the future management leads
-  abandonedCall: "group_mkwt7bfr",   // Abandoned Due to call
-  booked: "group_mksxb5m0",          // Web meeting booked (upcoming)
-  noShow: "group_mkwx4dhv",          // Web meeting No show
-  warm: "group_mksx27r4",            // Web meeting sat/warm
-  specialOffer: "group_mm16jhqm",    // Special offer applied
-  abandonedLeads: "group_mkwtw6he",  // Abandoned Leads
-  abandonedFU: "group_mm151eer",     // Abandoned Leads follow up
-  customer: "group_mm1dtkdm",        // Customer / signed
+  maintenance: "group_mkwhk3z9",
+  cold: "topics",
+  qualified: "group_mm28ypgs",
+  futureFromCall: "group_mm1htyz7",
+  futureGeneral: "group_mkwthdxq",
+  abandonedCall: "group_mkwt7bfr",
+  booked: "group_mksxb5m0",
+  noShow: "group_mkwx4dhv",
+  warm: "group_mksx27r4",
+  specialOffer: "group_mm16jhqm",
+  abandonedLeads: "group_mkwtw6he",
+  abandonedFU: "group_mm151eer",
+  customer: "group_mm1dtkdm",
 } as const;
 
-// Column IDs
-const COL = {
-  dateAdded: "date",                       // Date Added to board
-  presentationSent: "date_mm2q9b8g",       // Presentation Email Sent date
-  presentationViewed: "date_mm2qppyp",     // Presentation Viewed date
-  callRecording: "file_mm1daxvv",          // Call recordings file
+// Columns — confirmed IDs
+const C = {
+  dateAdded: "date",
+  callRecordings: "file_mm1daxvv",
+  noAnswerCount: "numeric_mm2tj6ny",
+  presentationSent: "date_mm2q9b8g",
+  followUp1Sent: "date_mm2q8sc3",
+  followUp2Sent: "date_mm2q6e9x",
+  presentationViewed: "date_mm2qppyp",
+  presentationResponses: "long_text_mm2pse8d",
+  postMeetingAction: "text_mm3h5atf",
+  lostReason: "color_mm1v2s3m",
   specialOfferType: "dropdown_mm0wabga",
   specialOfferExpiry: "date_mm0wdvyx",
   address: "text6",
   leadProfile: "text_mm1x8cgy",
-  noShowDate: "date_mm39hhdq",
   waMessagesSent: "numeric_mm3jrh70",
   waReplies: "numeric_mm3j1dff",
 } as const;
@@ -59,36 +71,78 @@ async function mondayQuery(query: string) {
   return json.data;
 }
 
-function colText(item: any, colId: string): string {
-  return item.column_values?.find((c: any) => c.id === colId)?.text || "";
-}
-function colPopulated(item: any, colId: string): boolean {
-  const col = item.column_values?.find((c: any) => c.id === colId);
-  if (!col) return false;
-  return !!(col.text?.trim() || (col.value && col.value !== "{}" && col.value !== "null"));
-}
-function parseDate(item: any, colId: string): Date | null {
-  const text = colText(item, colId);
-  if (!text) return null;
-  const d = new Date(text);
-  return isNaN(d.getTime()) ? null : d;
+// ── Helpers ────────────────────────────────────────────────────────
+
+function col(item: any, id: string) { return item.column_values?.find((c: any) => c.id === id); }
+function colText(item: any, id: string): string { return col(item, id)?.text || ""; }
+function colPopulated(item: any, id: string): boolean {
+  const c = col(item, id);
+  if (!c) return false;
+  return !!(c.text?.trim() || (c.value && c.value !== "{}" && c.value !== "null"));
 }
 
-// In-flight dedup + 5-min cache
+// Each file in the files array = 1 answered call (confirmed by Zac)
+function answeredCalls(item: any): number {
+  const c = col(item, C.callRecordings);
+  if (!c?.value) return 0;
+  try { return JSON.parse(c.value).files?.length || 0; } catch { return 0; }
+}
+
+// Unanswered calls from no-answer counter
+function unansweredCalls(item: any): number {
+  const v = parseInt(colText(item, C.noAnswerCount), 10);
+  return isNaN(v) ? 0 : v;
+}
+
+// Total calls = answered + unanswered
+function totalCalls(item: any): number { return answeredCalls(item) + unansweredCalls(item); }
+
+// Total emails = count of populated date columns for each send event
+function totalEmails(item: any): number {
+  let n = 0;
+  if (colPopulated(item, C.presentationSent)) n++;
+  if (colPopulated(item, C.followUp1Sent)) n++;
+  if (colPopulated(item, C.followUp2Sent)) n++;
+  return n;
+}
+
+// Date helpers
+function itemCreatedAt(item: any): Date { return new Date(item.created_at); }
+function colDate(item: any, id: string): Date | null {
+  const t = colText(item, id);
+  if (!t) return null;
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
+}
+function inPeriod(date: Date | null, from: Date | null, to: Date | null): boolean {
+  if (!date) return false;
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
+// Average of numbers, excluding zeros for meaningful averages
+function avg(nums: number[], excludeZeros = true): number {
+  const filtered = excludeZeros ? nums.filter(n => n > 0) : nums;
+  if (!filtered.length) return 0;
+  return Math.round((filtered.reduce((a, b) => a + b, 0) / filtered.length) * 10) / 10;
+}
+
+// ── Cache ───────────────────────────────────────────────────────────
 let _cache: { items: any[]; expires: number } | null = null;
 let _inFlight: Promise<any[]> | null = null;
 
-async function fetchAllItems(): Promise<any[]> {
+async function fetchAll(): Promise<any[]> {
   if (_cache && _cache.expires > Date.now()) return _cache.items;
   if (_inFlight) return _inFlight;
 
-  const colIds = Object.values(COL).map((c) => `"${c}"`).join(", ");
+  const colIds = Object.values(C).map(c => `"${c}"`).join(", ");
 
   _inFlight = (async () => {
     let all: any[] = [];
     let cursor: string | null = null;
 
-    const firstQ = `{
+    const first = `{
       boards(ids: [${BOARD_ID}]) {
         items_page(limit: 200) {
           cursor
@@ -101,13 +155,13 @@ async function fetchAllItems(): Promise<any[]> {
       }
     }`;
 
-    const firstData = await mondayQuery(firstQ);
-    const fp = firstData.boards?.[0]?.items_page;
+    const fd = await mondayQuery(first);
+    const fp = fd.boards?.[0]?.items_page;
     if (fp?.items) all.push(...fp.items);
     cursor = fp?.cursor || null;
 
     while (cursor) {
-      const nextQ = `{
+      const next = `{
         next_items_page(limit: 200, cursor: "${cursor}") {
           cursor
           items {
@@ -117,7 +171,7 @@ async function fetchAllItems(): Promise<any[]> {
           }
         }
       }`;
-      const nd = await mondayQuery(nextQ);
+      const nd = await mondayQuery(next);
       const np = nd.next_items_page;
       if (np?.items) all.push(...np.items);
       cursor = np?.cursor || null;
@@ -130,24 +184,7 @@ async function fetchAllItems(): Promise<any[]> {
   return _inFlight;
 }
 
-function inPeriod(item: any, from: Date | null, to: Date | null): boolean {
-  if (!from && !to) return true;
-  const d = parseDate(item, COL.dateAdded);
-  if (!d) return false;
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-}
-
-function inDateColPeriod(item: any, colId: string, from: Date | null, to: Date | null): boolean {
-  if (!from && !to) return true;
-  const d = parseDate(item, colId);
-  if (!d) return false;
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-}
-
+// ── Route ───────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -155,133 +192,203 @@ export async function GET(req: NextRequest) {
     const toStr = searchParams.get("to");
     const fromDate = fromStr ? new Date(fromStr) : null;
     const toDate = toStr ? (() => { const d = new Date(toStr); d.setHours(23, 59, 59, 999); return d; })() : null;
+    const filtered = !!(fromDate || toDate);
 
-    const allItems = await fetchAllItems();
+    const all = await fetchAll();
+    // Exclude maintenance service leads from everything
+    const items = all.filter(i => i.group?.id !== G.maintenance);
 
-    // Exclude maintenance service leads from all calculations
-    const items = allItems.filter(i => i.group?.id !== G.maintenance);
+    const gid = (i: any): string => i.group?.id || "";
 
-    const gid = (item: any) => item.group?.id as string;
+    // ── PERIOD METRICS ───────────────────────────────────────────
+    // Based on created_at — every lead starts in cold, so created_at = date entered board
+    const period = filtered
+      ? items.filter(i => inPeriod(itemCreatedAt(i), fromDate, toDate))
+      : items;
 
-    // ── PERIOD METRICS ──────────────────────────────────────────────
-    // Based on "date" (Date Added) being within the selected period.
-    // Logic: a lead added in period X that is now in a post-meeting
-    // group sat their web meeting in approximately that period.
+    const totalLeads = period.length;
 
-    const periodItems = items.filter(i => inPeriod(i, fromDate, toDate));
+    // Leads added in period that progressed to web meeting or beyond
+    const postMeetingGroups = [G.warm, G.specialOffer, G.customer];
+    const webMeetingGroups  = [G.booked, G.noShow, ...postMeetingGroups];
 
-    const totalLeads = periodItems.length;
-
-    // Web meetings sat = added in period AND currently in warm/specialOffer/customer
-    const webMeetingsSat = periodItems.filter(i =>
-      [G.warm, G.specialOffer, G.customer].includes(gid(i) as any)
-    ).length;
-
-    // Web meetings missed = added in period AND currently in noShow
-    const webMeetingsMissed = periodItems.filter(i => gid(i) === G.noShow).length;
-
-    // Web meetings upcoming = added in period AND currently in booked
-    const webMeetingsUpcoming = periodItems.filter(i => gid(i) === G.booked).length;
-
-    // Total web meeting activity for period
-    const totalWebMeetings = webMeetingsSat + webMeetingsMissed + webMeetingsUpcoming;
-
-    // Customers won in period (added in period AND now customer)
-    const customersWon = periodItems.filter(i => gid(i) === G.customer).length;
-
-    // Abandoned in period
-    const abandonedInPeriod = periodItems.filter(i =>
+    const webMeetingSat      = period.filter(i => postMeetingGroups.includes(gid(i) as any)).length;
+    const webMeetingNoShow   = period.filter(i => gid(i) === G.noShow).length;
+    const webMeetingUpcoming = period.filter(i => gid(i) === G.booked).length;
+    const totalWebMeetings   = webMeetingSat + webMeetingNoShow + webMeetingUpcoming;
+    const customersWon       = period.filter(i => gid(i) === G.customer).length;
+    const abandonedInPeriod  = period.filter(i =>
       [G.abandonedCall, G.abandonedLeads, G.abandonedFU].includes(gid(i) as any)
     ).length;
 
-    // Outreach in period — filtered by activity date columns
-    const presentationsSentInPeriod = items.filter(i =>
-      inDateColPeriod(i, COL.presentationSent, fromDate, toDate)
+    // Outreach in period — by activity date columns
+    const presentationsSent = items.filter(i =>
+      inPeriod(colDate(i, C.presentationSent), fromDate, toDate)
     ).length;
-
-    const presentationsViewedInPeriod = items.filter(i =>
-      inDateColPeriod(i, COL.presentationViewed, fromDate, toDate)
+    const engaged = items.filter(i =>
+      inPeriod(colDate(i, C.presentationSent), fromDate, toDate) &&
+      colPopulated(i, C.presentationResponses)
     ).length;
+    const callsMadeInPeriod = period.filter(i => answeredCalls(i) > 0).length;
 
-    const callsMadeInPeriod = items.filter(i =>
-      inPeriod(i, fromDate, toDate) && colPopulated(i, COL.callRecording)
-    ).length;
-
-    // ── LIVE SNAPSHOT ───────────────────────────────────────────────
-    // Current state regardless of date — how many are in each stage right now.
-    const snap = (groupId: string) => items.filter(i => gid(i) === groupId).length;
-
+    // ── SNAPSHOT (current state, no date filter) ──────────────────
+    const snap = (g: string) => items.filter(i => gid(i) === g).length;
     const snapshot = {
-      qualified:    snap(G.qualified),
-      future:       snap(G.futureFromCall) + snap(G.futureGeneral),
-      booked:       snap(G.booked),
-      noShow:       snap(G.noShow),
-      warm:         snap(G.warm),
-      specialOffer: snap(G.specialOffer),
-      customer:     snap(G.customer),
-      abandoned:    snap(G.abandonedCall) + snap(G.abandonedLeads) + snap(G.abandonedFU),
+      cold:            snap(G.cold),
+      qualified:       snap(G.qualified),
+      futureFromCall:  snap(G.futureFromCall),
+      futureGeneral:   snap(G.futureGeneral),
+      pipeline:        snap(G.qualified) + snap(G.futureFromCall), // total needing contact
+      booked:          snap(G.booked),
+      noShow:          snap(G.noShow),
+      warm:            snap(G.warm),
+      specialOffer:    snap(G.specialOffer),
+      customer:        snap(G.customer),
+      abandonedAll:    snap(G.abandonedCall) + snap(G.abandonedLeads) + snap(G.abandonedFU),
+      totalOnBoard:    items.length,
     };
 
-    // ── CONVERSION RATES ────────────────────────────────────────────
+    // ── FUNNEL RATES (snapshot-based) ─────────────────────────────
+    const attended = snapshot.warm + snapshot.specialOffer + snapshot.customer;
+    const totalMeetingActivity = snapshot.booked + snapshot.noShow + attended;
+
     const rates = {
-      webMeetingRate: totalLeads > 0
-        ? Math.round((totalWebMeetings / totalLeads) * 100) : 0,
-      attendanceRate: (webMeetingsSat + webMeetingsMissed) > 0
-        ? Math.round((webMeetingsSat / (webMeetingsSat + webMeetingsMissed)) * 100) : 0,
-      customerRate: totalLeads > 0
-        ? Math.round((customersWon / totalLeads) * 100) : 0,
-      presentationEngagement: presentationsSentInPeriod > 0
-        ? Math.round((presentationsViewedInPeriod / presentationsSentInPeriod) * 100) : 0,
+      // Engagement
+      presentationEngagement: presentationsSent > 0
+        ? Math.round(engaged / presentationsSent * 100) : 0,
+      // Funnel progression
+      qualificationRate: snapshot.totalOnBoard > 0
+        ? Math.round(snapshot.pipeline / snapshot.totalOnBoard * 100) : 0,
+      meetingBookingRate: snapshot.pipeline > 0
+        ? Math.round(totalMeetingActivity / snapshot.pipeline * 100) : 0,
+      attendanceRate: (attended + snapshot.noShow) > 0
+        ? Math.round(attended / (attended + snapshot.noShow) * 100) : 0,
+      specialOfferRate: attended > 0
+        ? Math.round(snapshot.specialOffer / attended * 100) : 0,
+      warmRate: attended > 0
+        ? Math.round(snapshot.warm / attended * 100) : 0,
+      // Post-meeting close — warm+offer+customer pool
+      // Note: excludes abandoned post-meeting leads (data limited)
       postMeetingClose: (snapshot.warm + snapshot.specialOffer + snapshot.customer) > 0
-        ? Math.round((snapshot.customer / (snapshot.warm + snapshot.specialOffer + snapshot.customer)) * 100) : 0,
+        ? Math.round(snapshot.customer / (snapshot.warm + snapshot.specialOffer + snapshot.customer) * 100) : 0,
+      // Overall
+      overallConversion: snapshot.totalOnBoard > 0
+        ? Math.round(snapshot.customer / snapshot.totalOnBoard * 100) : 0,
+      // Period conversion
+      periodConversion: totalLeads > 0
+        ? Math.round(customersWon / totalLeads * 100) : 0,
     };
 
-    // ── SPECIAL OFFER DETAILS ───────────────────────────────────────
+    // ── EFFICIENCY METRICS ────────────────────────────────────────
+    // Pool: warm + special offer + customer (all attended web meeting)
+    // Includes customers for completeness even if some data is missing
+    const postMeetingItems = items.filter(i => postMeetingGroups.includes(gid(i) as any));
+    const customerItems    = items.filter(i => gid(i) === G.customer);
+
+    // Calls
+    const callCounts     = postMeetingItems.map(totalCalls);
+    const custCallCounts = customerItems.map(totalCalls);
+
+    // Emails — only for leads where email tracking exists (presentationSent populated)
+    const emailItems       = postMeetingItems.filter(i => colPopulated(i, C.presentationSent));
+    const emailCounts      = emailItems.map(totalEmails);
+    const custEmailItems   = customerItems.filter(i => colPopulated(i, C.presentationSent));
+    const custEmailCounts  = custEmailItems.map(totalEmails);
+
+    // For cold leads (to understand calls per booking from start)
+    const bookedAndBeyond = items.filter(i => webMeetingGroups.includes(gid(i) as any));
+    const callsToBooking  = bookedAndBeyond.map(totalCalls);
+
+    const efficiency = {
+      // Calls
+      avgCallsPostMeeting:      avg(callCounts),
+      avgCallsCustomer:         avg(custCallCounts),
+      avgCallsToBookMeeting:    avg(callsToBooking),
+      totalAnsweredCallsPool:   callCounts.filter(n => n > 0).length,
+      // Emails
+      avgEmailsPostMeeting:     avg(emailCounts, false),
+      avgEmailsCustomer:        avg(custEmailCounts, false),
+      emailTrackingPoolSize:    emailItems.length,
+      custEmailTrackingPoolSize: custEmailItems.length,
+      // Data notes
+      postMeetingPoolSize:      postMeetingItems.length,
+      customerPoolSize:         customerItems.length,
+    };
+
+    // ── ABANDONMENT INTELLIGENCE ──────────────────────────────────
+    const abandonedItems = items.filter(i =>
+      [G.abandonedCall, G.abandonedLeads, G.abandonedFU].includes(gid(i) as any)
+    );
+
+    // Count by lost reason
+    const reasonCounts: Record<string, number> = {};
+    for (const item of abandonedItems) {
+      const reason = colText(item, C.lostReason) || "None";
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+    }
+
+    const topReasons = Object.entries(reasonCounts)
+      .filter(([r]) => r !== "None")
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([reason, count]) => ({ reason, count }));
+
+    const noReasonCount = reasonCounts["None"] || 0;
+
+    // Post-meeting abandoned (action plan populated = had meeting before abandoning)
+    // Note: only accurate from recent automation
+    const postMeetingAbandoned = abandonedItems.filter(i =>
+      colPopulated(i, C.postMeetingAction)
+    ).length;
+
+    // ── SPECIAL OFFERS ────────────────────────────────────────────
     const now = new Date();
     const offerItems = items.filter(i => gid(i) === G.specialOffer);
     const offers = offerItems.map(item => {
-      const expiryStr = colText(item, COL.specialOfferExpiry);
+      const expiryStr = colText(item, C.specialOfferExpiry);
       const expiry = expiryStr ? new Date(expiryStr) : null;
       const daysLeft = expiry
         ? Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         : null;
       return {
         id: item.id, name: item.name,
-        profile: colText(item, COL.leadProfile),
-        offerType: colText(item, COL.specialOfferType),
+        profile: colText(item, C.leadProfile),
+        offerType: colText(item, C.specialOfferType),
         expiry: expiryStr, daysLeft,
-        address: colText(item, COL.address),
+        address: colText(item, C.address),
       };
     });
 
-    // ── WHATSAPP ────────────────────────────────────────────────────
+    // ── WHATSAPP ──────────────────────────────────────────────────
     const waTotal = items.reduce((s, i) => {
-      const v = parseInt(colText(i, COL.waMessagesSent) || "0", 10);
+      const v = parseInt(colText(i, C.waMessagesSent) || "0", 10);
       return s + (isNaN(v) ? 0 : v);
     }, 0);
     const waContacted = items.filter(i =>
-      parseInt(colText(i, COL.waMessagesSent) || "0", 10) > 0
+      parseInt(colText(i, C.waMessagesSent) || "0", 10) > 0
     ).length;
     const waReplies = items.reduce((s, i) => {
-      const v = parseInt(colText(i, COL.waReplies) || "0", 10);
+      const v = parseInt(colText(i, C.waReplies) || "0", 10);
       return s + (isNaN(v) ? 0 : v);
     }, 0);
 
     return NextResponse.json({
       period: {
-        totalLeads,
-        webMeetingsSat,
-        webMeetingsMissed,
-        webMeetingsUpcoming,
-        totalWebMeetings,
-        customersWon,
-        abandonedInPeriod,
-        presentationsSent: presentationsSentInPeriod,
-        presentationsViewed: presentationsViewedInPeriod,
-        callsMade: callsMadeInPeriod,
+        totalLeads, webMeetingSat, webMeetingNoShow, webMeetingUpcoming,
+        totalWebMeetings, customersWon, abandonedInPeriod,
+        presentationsSent, engaged,
+        callsMadeInPeriod,
       },
       snapshot,
       rates,
+      efficiency,
+      abandonment: {
+        total: abandonedItems.length,
+        withReason: abandonedItems.length - noReasonCount,
+        noReason: noReasonCount,
+        postMeetingAbandoned,
+        topReasons,
+      },
       offers: {
         active: offerItems.length,
         expiringThisWeek:  offers.filter(o => o.daysLeft !== null && o.daysLeft >= 0 && o.daysLeft <= 7).length,
@@ -289,16 +396,12 @@ export async function GET(req: NextRequest) {
         items: offers.sort((a, b) => (a.daysLeft ?? 999) - (b.daysLeft ?? 999)),
       },
       whatsapp: {
-        messagesSent: waTotal,
-        contacted: waContacted,
-        replies: waReplies,
-        replyRate: waContacted > 0 ? Math.round((waReplies / waContacted) * 100) : 0,
+        messagesSent: waTotal, contacted: waContacted, replies: waReplies,
+        replyRate: waContacted > 0 ? Math.round(waReplies / waContacted * 100) : 0,
         active: waTotal > 0,
       },
-      dateRange: { from: fromStr, to: toStr, filtered: !!(fromStr || toStr) },
-    }, {
-      headers: { "Cache-Control": "private, max-age=300" },
-    });
+      dateRange: { from: fromStr, to: toStr, filtered },
+    }, { headers: { "Cache-Control": "private, max-age=300" } });
   } catch (err) {
     console.error("[Sales API]", err);
     return NextResponse.json(

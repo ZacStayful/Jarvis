@@ -5,25 +5,30 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { metrics, question } = await req.json();
-    const p = metrics?.period;
-    const s = metrics?.snapshot;
-    const r = metrics?.rates;
+    const { metrics: m, question } = await req.json();
+    const p = m?.period;
+    const s = m?.snapshot;
+    const r = m?.rates;
+    const e = m?.efficiency;
     if (!p) return NextResponse.json({ error: "No metrics" }, { status: 400 });
 
-    const system = `You are JARVIS, Stayful's AI intelligence layer.
+    const system = `You are JARVIS, Stayful's AI intelligence layer. Speak directly to Zac.
 
-Speak directly to Zac, the founder. Be precise, confident, brief. Use specific numbers always. Apply VALIDATE then REFRAME then QUANTIFY when analysing drop-offs. Reference "revenue floor" not "minimum income". For hypotheticals: show the exact calculation, then the implication. Maximum 4 sentences for summaries. Maximum 3 sentences for hypotheticals.`;
+Be precise, confident, brief. Always use specific numbers. Never say "potential" or "could". For hypotheticals: state the exact calculation then the implication in one sentence. For summaries: 4 sentences max. Identify the biggest drop-off. Name one action for today. VALIDATE then REFRAME then QUANTIFY when analysing problems. Use "revenue floor" language.`;
 
-    const context = `Current pipeline data:
+    const ctx = `Pipeline data:
 
-Period metrics: ${p.totalLeads} leads added, ${p.webMeetingsSat} web meetings sat, ${p.webMeetingsMissed} no shows, ${p.webMeetingsUpcoming} upcoming, ${p.customersWon} customers won, ${p.presentationsSent} presentations sent, ${p.presentationsViewed} viewed (${r.presentationEngagement}% engagement), ${p.callsMade} calls. Live snapshot: ${s.qualified} qualified, ${s.booked} booked, ${s.noShow} no shows, ${s.warm} warm, ${s.specialOffer} special offer, ${s.customer} total customers, ${s.future} future. Rates: ${r.webMeetingRate}% meeting rate, ${r.attendanceRate}% attendance, ${r.customerRate}% conversion, ${r.postMeetingClose}% post-meeting close. Offers expiring this week: ${metrics.offers?.expiringThisWeek}.`;
+Period: ${p.totalLeads} leads added, ${p.webMeetingSat} meetings sat, ${p.webMeetingNoShow} no shows, ${p.webMeetingUpcoming} upcoming, ${p.customersWon} customers won, ${p.presentationsSent} presentations sent, ${p.engaged} engaged (${r.presentationEngagement}%). Snapshot: ${s.pipeline} in pipeline, ${s.booked} booked, ${s.noShow} no shows, ${s.warm} warm, ${s.specialOffer} special offer, ${s.customer} total customers. Rates: ${r.qualificationRate}% qualification, ${r.meetingBookingRate}% pipeline→meeting, ${r.attendanceRate}% attendance, ${r.specialOfferRate}% offer rate, ${r.postMeetingClose}% post-meeting close (excludes abandoned), ${r.overallConversion}% overall. Efficiency: avg ${e.avgCallsToBookMeeting} calls to book meeting, ${e.avgCallsCustomer} calls per customer, ${e.avgEmailsPostMeeting} emails per post-meeting lead. Offers expiring this week: ${m.offers?.expiringThisWeek}.`;
 
     const userMsg = question
-      ? `${context}\n\nZac asks: ${question}\n\nAnswer directly. Show calculation if hypothetical. Give one clear action.`
-      : `${context}\n\nGive Zac a 4-sentence pipeline briefing. Identify the biggest drop-off. Flag fast-path signals. Name one action for today.`;
+      ? `${ctx}
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+Zac asks: ${question}
+Answer directly. Show calculation if hypothetical. Give one clear action.`
+      : `${ctx}
+Give Zac a 4-sentence pipeline briefing. Biggest drop-off first. One action for today.`;
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key": process.env.ANTHROPIC_API_KEY || "",
@@ -38,7 +43,7 @@ Period metrics: ${p.totalLeads} leads added, ${p.webMeetingsSat} web meetings sa
       }),
     });
 
-    const data = await response.json();
+    const data = await resp.json();
     const text = data.content?.[0]?.text || "Unable to generate summary.";
     return NextResponse.json({ summary: text, isHypothetical: !!question });
   } catch (err) {
