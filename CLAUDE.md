@@ -148,6 +148,13 @@ successful playback).
 - Voice summary endpoint: `/api/news/voice-summary` — takes the
   article list + optional category, returns a 3–5 sentence flowing
   Sonnet 4.6 synthesis. Not a verbatim read.
+- "Summarise the news" when briefing is already open re-narrates the
+  cached `loadedArticlesRef` set instead of asking "what type?". See
+  `isSummariseRequest` in `lib/voice-news-intents.ts` and the
+  summarise branch at the top of `handleNewsRequest` in `app/page.tsx`.
+  If a *different* category is named in the same utterance, it falls
+  through to the switch+refetch path and `onComplete` narrates the
+  fresh load.
 
 ---
 
