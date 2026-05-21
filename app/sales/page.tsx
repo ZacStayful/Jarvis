@@ -1,8 +1,5 @@
-// app/sales/page.tsx
 "use client";
-
-import { SalesDashboard } from "@/components/sales/SalesDashboard";
-
+import { redirect } from "next/navigation";
 export default function SalesPage() {
-  return <SalesDashboard />;
+  redirect("/");
 }

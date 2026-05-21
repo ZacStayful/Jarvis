@@ -1,14 +1,12 @@
 // components/sales/SalesDashboard.tsx
+// Inline component — mounted inside the main Jarvis shell like LucyView.
+// No router, no full-page layout, no own voice. Main Jarvis voice handles
+// navigation. The JARVIS query panel sends to /api/sales/summary.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronLeft, ArrowRight } from "lucide-react";
-import { C } from "@/lib/jarvis-design";
-import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { useTTS } from "@/hooks/useTTS";
+import { ArrowRight } from "lucide-react";
 
-/* ─── Palette ─── */
 const S = {
   bg: "#080c09",
   surface: "#0e1410",
@@ -22,686 +20,434 @@ const S = {
   amber: "#c8922a",
   red: "#9b3a3a",
   blue: "#3a6b9b",
+  purple: "#9d50dd",
   text: "#e8ede7",
   textDim: "#7a8f79",
   textMuted: "#3d4e3c",
 };
 
-/* ─── Types ─── */
-interface SalesMetrics {
-  funnel: {
-    cold: number;
-    qualified: number;
-    future: number;
-    futureFromCall: number;
-    futureGeneral: number;
-    abandonedFromCall: number;
-    abandonedGeneral: number;
-    webMeetingBooked: number;
-    noShow: number;
-    warm: number;
-    specialOffer: number;
-    customer: number;
-    totalPipeline: number;
+interface Metrics {
+  period: {
     totalLeads: number;
+    webMeetingsSat: number;
+    webMeetingsMissed: number;
+    webMeetingsUpcoming: number;
+    totalWebMeetings: number;
+    customersWon: number;
+    abandonedInPeriod: number;
+    presentationsSent: number;
+    presentationsViewed: number;
+    callsMade: number;
+  };
+  snapshot: {
+    qualified: number; future: number; booked: number; noShow: number;
+    warm: number; specialOffer: number; customer: number; abandoned: number;
   };
   rates: {
-    qualifiedToMeetingRate: number;
-    attendanceRate: number;
-    postMeetingConversion: number;
-    coldToCustomer: number;
-    engagementRate: number;
-  };
-  outreach: {
-    callsMade: number;
-    presentationEmailSent: number;
-    presentationViewed: number;
-    waMessagesSent: number;
-    waReplies: number;
-    waContacted: number;
-    waReplyRate: number;
-    waActive: boolean;
+    webMeetingRate: number; attendanceRate: number; customerRate: number;
+    presentationEngagement: number; postMeetingClose: number;
   };
   offers: {
-    active: number;
-    expiringThisWeek: number;
-    expiringThisMonth: number;
+    active: number; expiringThisWeek: number; expiringThisMonth: number;
     items: { id: string; name: string; profile: string; offerType: string; expiry: string; daysLeft: number | null; address: string }[];
   };
+  whatsapp: { messagesSent: number; contacted: number; replies: number; replyRate: number; active: boolean };
   dateRange: { from: string | null; to: string | null; filtered: boolean };
 }
 
-/* ─── Main ─── */
 export function SalesDashboard() {
-  const router = useRouter();
-  const [metrics, setMetrics] = useState<SalesMetrics | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [focusedChunk, setFocusedChunk] = useState<string>("funnel");
   const [preset, setPreset] = useState<"week" | "month" | "year" | "custom">("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [autoSummary, setAutoSummary] = useState<string | null>(null);
-  const [autoSummaryLoading, setAutoSummaryLoading] = useState(false);
-  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
+  const [focusedChunk, setFocusedChunk] = useState("funnel");
 
-  const { speak, isSpeaking, muted } = useTTS();
-
-  const handleVoiceCommand = useCallback(async (text: string) => {
-    const lower = text.toLowerCase().trim();
-
-    // Navigation commands
-    if (/\b(close|go back|back|exit|home)\b/.test(lower)) {
-      router.push('/');
-      return;
-    }
-    if (/\bpipeline\b/.test(lower)) { setFocusedChunk('funnel'); return; }
-    if (/\boutreach\b/.test(lower)) { setFocusedChunk('outreach'); return; }
-    if (/\bmeetings?\b/.test(lower)) { setFocusedChunk('meetings'); return; }
-    if (/\boffer/.test(lower) && !/summarise|summary/.test(lower)) {
-      setFocusedChunk('offers'); return;
-    }
-
-    // Any other spoken input — treat as a question for JARVIS
-    if (!metrics) return;
-    try {
-      const res = await fetch('/api/sales/summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metrics, question: text }),
-      });
-      const data = await res.json();
-      if (data.summary && !muted) {
-        speak(data.summary);
-      }
-      setLastAnswer(data.summary || '');
-    } catch {}
-  }, [metrics, muted, speak, router]);
-
-  const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
-    onFinalTranscript: (text) => {
-      handleVoiceCommand(text);
-    },
-  });
-
-  const getDateRange = useCallback(() => {
+  const getRange = useCallback(() => {
     const now = new Date();
-    if (preset === "week") {
-      const from = new Date(now);
-      from.setDate(from.getDate() - 7);
-      return { from: from.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
-    }
-    if (preset === "month") {
-      const from = new Date(now);
-      from.setDate(from.getDate() - 30);
-      return { from: from.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
-    }
-    if (preset === "year") {
-      const from = new Date(now);
-      from.setFullYear(from.getFullYear() - 1);
-      return { from: from.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
-    }
+    if (preset === "week")  { const f = new Date(now); f.setDate(f.getDate() - 7);   return { from: f.toISOString().split("T")[0], to: now.toISOString().split("T")[0] }; }
+    if (preset === "month") { const f = new Date(now); f.setDate(f.getDate() - 30);  return { from: f.toISOString().split("T")[0], to: now.toISOString().split("T")[0] }; }
+    if (preset === "year")  { const f = new Date(now); f.setFullYear(f.getFullYear() - 1); return { from: f.toISOString().split("T")[0], to: now.toISOString().split("T")[0] }; }
     if (customFrom && customTo) return { from: customFrom, to: customTo };
     return { from: null, to: null };
   }, [preset, customFrom, customTo]);
 
-  const fetchMetrics = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const range = getDateRange();
-      const params = new URLSearchParams();
-      if (range.from) params.set("from", range.from);
-      if (range.to) params.set("to", range.to);
-      const res = await fetch(`/api/sales?${params}`);
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setMetrics(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
+      const r = getRange();
+      const p = new URLSearchParams();
+      if (r.from) p.set("from", r.from);
+      if (r.to) p.set("to", r.to);
+      const res = await fetch(`/api/sales?${p}`);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+      setMetrics(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
     } finally {
       setLoading(false);
     }
-  }, [getDateRange]);
+  }, [getRange]);
 
-  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
-
-  // Auto-start listening when the sales page loads
-  useEffect(() => {
-    const t = setTimeout(() => {
-      startListening().catch(() => {});
-    }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Stop listening while JARVIS is speaking to prevent echo, resume after.
-  useEffect(() => {
-    if (isSpeaking && isListening) stopListening();
-    if (!isSpeaking && !isListening) {
-      const t = setTimeout(() => startListening().catch(() => {}), 400);
-      return () => clearTimeout(t);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSpeaking, isListening]);
-
-  // Fetch an auto-briefing once metrics first arrive.
-  useEffect(() => {
-    if (!metrics) return;
-    let cancelled = false;
-    setAutoSummaryLoading(true);
-    fetch('/api/sales/summary', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ metrics }),
-    })
-      .then(async (r) => {
-        const body = await r.json().catch(() => ({}));
-        if (!r.ok || body.error) throw new Error(body.error || `HTTP ${r.status}`);
-        return body;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setAutoSummary(data.summary || null);
-      })
-      .catch(() => {
-        if (!cancelled) setAutoSummary(null);
-      })
-      .finally(() => {
-        if (!cancelled) setAutoSummaryLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [metrics]);
+  useEffect(() => { load(); }, [load]);
 
   return (
-    <div style={{ minHeight: "100vh", background: S.bg, color: S.text, fontFamily: "Rajdhani, sans-serif" }}>
-      {/* Header */}
-      <header style={{
-        position: "sticky", top: 0, zIndex: 100,
-        background: "rgba(8,12,9,0.92)", backdropFilter: "blur(12px)",
-        borderBottom: `1px solid ${S.border}`,
-        padding: "0 24px", height: 52,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button onClick={() => router.push("/")} style={{ background: "none", border: "none", cursor: "pointer", color: S.green, display: "flex", alignItems: "center" }}>
-            <ChevronLeft size={16} />
-          </button>
-          <span className="orb" style={{ fontSize: 12, letterSpacing: "0.22em", color: S.greenHi }}>JARVIS</span>
-          <span style={{ width: 1, height: 14, background: S.border }} />
-          <span className="mono" style={{ fontSize: 9, letterSpacing: "0.15em", color: S.textDim }}>SALES INTELLIGENCE</span>
-        </div>
+    <div style={{ width: "100%", fontFamily: "Rajdhani, sans-serif", color: S.text }}>
+      {/* Sub-header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: `1px solid ${S.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <DateRangePicker preset={preset} onPreset={setPreset} customFrom={customFrom} customTo={customTo} onCustomFrom={setCustomFrom} onCustomTo={setCustomTo} />
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: loading ? S.amber : error ? S.red : "#4ade80", animation: loading ? "pulse 1.5s ease infinite" : "none" }} />
-            <span className="mono" style={{ fontSize: 9, color: S.textDim, letterSpacing: "0.08em" }}>{loading ? "LOADING" : error ? "ERROR" : "LIVE"}</span>
-          </div>
+          <span className="mono" style={{ fontSize: 9, letterSpacing: "0.15em", color: S.textDim }}>SALES INTELLIGENCE</span>
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: loading ? S.amber : error ? S.red : "#4ade80", animation: loading ? "pulse 1.5s ease infinite" : "none" }} />
         </div>
-      </header>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <DatePicker preset={preset} onPreset={setPreset} from={customFrom} to={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />
+          <button onClick={load} className="mono" style={{ fontSize: 9, background: S.surface, border: `1px solid ${S.border}`, color: S.textDim, padding: "3px 10px", borderRadius: 4, cursor: "pointer", letterSpacing: "0.08em" }}>REFRESH</button>
+        </div>
+      </div>
 
-      <main>
-        {error && !metrics ? (
-          <div style={{ padding: 40, textAlign: "center" }}>
-            <div className="mono" style={{ color: S.red, fontSize: 12, marginBottom: 12 }}>{error}</div>
-            <button onClick={fetchMetrics} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, color: S.greenHi, padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 10, letterSpacing: "0.1em" }}>RETRY</button>
-          </div>
-        ) : (
-          <>
-            <JarvisQueryPanel
-              autoSummary={autoSummary}
-              autoSummaryLoading={autoSummaryLoading}
-              lastAnswer={lastAnswer}
-              isListening={isListening}
-              isSpeaking={isSpeaking}
-              muted={muted}
-              partialTranscript={partialTranscript}
-            />
-            <Chunk id="funnel" index="01" name="Sales Funnel" focused={focusedChunk === "funnel"} onClick={() => setFocusedChunk("funnel")} loading={loading}>
-              {metrics && <SalesFunnel m={metrics} />}
-            </Chunk>
-            <Divider label="Outreach Channels" />
-            <Chunk id="outreach" index="02" name="Outreach Activity" focused={focusedChunk === "outreach"} onClick={() => setFocusedChunk("outreach")} loading={loading}>
-              {metrics && <OutreachMetrics m={metrics} />}
-            </Chunk>
-            <Divider label="Post-Meeting Conversion" />
-            <Chunk id="meetings" index="03" name="Web Meeting Performance" focused={focusedChunk === "meetings"} onClick={() => setFocusedChunk("meetings")} loading={loading}>
-              {metrics && <WebMeetingMetrics m={metrics} />}
-            </Chunk>
-            <Divider label="Offer Management" />
-            <Chunk id="offers" index="04" name="Special Offers" focused={focusedChunk === "offers"} onClick={() => setFocusedChunk("offers")} loading={loading}>
-              {metrics && <SpecialOffers m={metrics} />}
-            </Chunk>
-          </>
-        )}
-      </main>
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)} }
-      `}</style>
+      {error ? (
+        <div style={{ padding: 32, textAlign: "center" }}>
+          <div className="mono" style={{ color: S.red, marginBottom: 12 }}>{error}</div>
+          <button onClick={load} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, color: S.greenHi, padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 9 }}>RETRY</button>
+        </div>
+      ) : (
+        <div style={{ padding: "0 0 40px" }}>
+          {/* ── PERIOD FUNNEL ── */}
+          <Section id="funnel" index="01" label="Sales Funnel" sub={`Leads added in selected period and their outcomes`} focused={focusedChunk === "funnel"} onClick={() => setFocusedChunk("funnel")} loading={loading}>
+            {metrics && <PeriodFunnel m={metrics} />}
+          </Section>
+
+          <Div label="Live Pipeline" />
+
+          {/* ── LIVE SNAPSHOT ── */}
+          <Section id="pipeline" index="02" label="Pipeline Snapshot" sub="Current state of all leads regardless of period" focused={focusedChunk === "pipeline"} onClick={() => setFocusedChunk("pipeline")} loading={loading}>
+            {metrics && <LiveSnapshot m={metrics} />}
+          </Section>
+
+          <Div label="Outreach Activity" />
+
+          {/* ── OUTREACH ── */}
+          <Section id="outreach" index="03" label="Outreach" sub="Activity within selected period" focused={focusedChunk === "outreach"} onClick={() => setFocusedChunk("outreach")} loading={loading}>
+            {metrics && <OutreachPanel m={metrics} />}
+          </Section>
+
+          <Div label="Offer Management" />
+
+          {/* ── OFFERS ── */}
+          <Section id="offers" index="04" label="Special Offers" sub="Active offers and expiry" focused={focusedChunk === "offers"} onClick={() => setFocusedChunk("offers")} loading={loading}>
+            {metrics && <OffersPanel m={metrics} />}
+          </Section>
+
+          <Div label="JARVIS Analysis" />
+
+          {/* ── JARVIS QUERY ── */}
+          <Section id="query" index="05" label="Ask JARVIS" sub="Hypotheticals and funnel analysis — type or speak" focused={focusedChunk === "query"} onClick={() => setFocusedChunk("query")} loading={false}>
+            {metrics && <QueryPanel metrics={metrics} />}
+          </Section>
+        </div>
+      )}
+
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} @keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }
 
-/* ─── JARVIS Query Panel (voice-first) ─── */
-function JarvisQueryPanel({
-  autoSummary,
-  autoSummaryLoading,
-  lastAnswer,
-  isListening,
-  isSpeaking,
-  muted,
-  partialTranscript,
-}: {
-  autoSummary: string | null;
-  autoSummaryLoading: boolean;
-  lastAnswer: string | null;
-  isListening: boolean;
-  isSpeaking: boolean;
-  muted: boolean;
-  partialTranscript: string;
-}) {
-  const status = isSpeaking
-    ? "SPEAKING"
-    : isListening
-      ? "LISTENING"
-      : "READY";
-  const dotColor = isSpeaking
-    ? S.greenHi
-    : isListening
-      ? S.green
-      : S.amber;
-  const animating = isSpeaking || isListening;
-
+/* ── Section wrapper ── */
+function Section({ id, index, label, sub, focused, onClick, loading, children }: any) {
   return (
-    <section
-      style={{
-        margin: "20px 28px 24px",
-        background: "linear-gradient(180deg, rgba(93,129,86,0.06), rgba(93,129,86,0.02))",
-        border: `1px solid ${S.borderHi}`,
-        borderRadius: 10,
-        padding: "18px 20px",
-        position: "relative",
-      }}
-    >
-      {/* Header row: title + voice status pill */}
+    <div onClick={onClick} style={{ borderBottom: `1px solid ${S.border}`, padding: "20px 20px", cursor: "default", background: focused ? "rgba(93,129,86,0.03)" : "transparent", borderLeft: focused ? `2px solid ${S.green}` : "2px solid transparent", animation: "fadeUp .3s ease both" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: S.greenHi, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: S.green, animation: autoSummaryLoading ? "pulse 1.5s ease infinite" : "none" }} />
-          JARVIS Briefing
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="mono" style={{ fontSize: 9, color: S.textMuted }}>{index} /</span>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", color: S.textDim, textTransform: "uppercase" }}>{label}</span>
+          <span className="mono" style={{ fontSize: 9, color: S.textMuted }}>{sub}</span>
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "rgba(13, 20, 13, 0.92)",
-            border: `1px solid ${isListening || isSpeaking ? S.borderHi : S.border}`,
-            borderRadius: 999,
-            padding: "5px 14px",
-          }}
-        >
-          <div
-            style={{
-              width: 6, height: 6, borderRadius: "50%",
-              background: dotColor,
-              animation: animating ? "pulse 1.5s ease infinite" : "none",
-            }}
-          />
-          <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: isListening || isSpeaking ? S.greenHi : S.textDim }}>
-            {muted && isListening ? `${status} · MUTED` : status}
-          </span>
-        </div>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: loading ? S.amber : S.green, animation: loading ? "pulse 1.5s ease infinite" : "none" }} />
       </div>
-
-      {/* Auto-summary text */}
-      {autoSummaryLoading && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-          {[88, 96, 72].map((w, i) => (
-            <div key={i} style={{ height: 10, width: `${w}%`, background: S.surface2, borderRadius: 4, animation: "pulse 1.5s ease infinite" }} />
-          ))}
-        </div>
-      )}
-      {!autoSummaryLoading && autoSummary && (
-        <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: 14, color: S.text, lineHeight: 1.55, letterSpacing: "0.01em", marginBottom: lastAnswer ? 16 : 12 }}>
-          {autoSummary}
-        </div>
-      )}
-      {!autoSummaryLoading && !autoSummary && (
-        <div className="mono" style={{ fontSize: 11, color: S.textMuted, marginBottom: 12 }}>
-          Briefing unavailable. Ask a question by voice to query the pipeline.
-        </div>
-      )}
-
-      {/* Last spoken answer */}
-      {lastAnswer && (
-        <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 12, marginBottom: 12 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.18em", color: S.textDim, textTransform: "uppercase", marginBottom: 6 }}>
-            Last answer
-          </div>
-          <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: 13, color: S.text, lineHeight: 1.55 }}>
-            {lastAnswer}
-          </div>
-        </div>
-      )}
-
-      {/* Partial transcript preview while listening */}
-      {isListening && partialTranscript && (
-        <div className="mono" style={{ fontSize: 10, color: S.greenDim, marginBottom: 8, fontStyle: "italic" }}>
-          “{partialTranscript}”
-        </div>
-      )}
-
-      {/* Instruction */}
-      <div className="mono" style={{ fontSize: 9, letterSpacing: "0.1em", color: S.textMuted, borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
-        Say your question aloud — JARVIS will respond by voice.
-      </div>
-    </section>
+      {loading && id !== "query" ? <Skel /> : children}
+    </div>
   );
 }
 
-/* ─── Date Range Picker ─── */
-function DateRangePicker({ preset, onPreset, customFrom, customTo, onCustomFrom, onCustomTo }: any) {
+function Skel() {
+  return <div style={{ display: "flex", gap: 10 }}>{[1, 2, 3].map(i => <div key={i} style={{ flex: 1, height: 70, borderRadius: 6, background: S.surface, animation: "pulse 1.5s ease infinite" }} />)}</div>;
+}
+
+function Div({ label }: any) {
+  return <div className="mono" style={{ fontSize: 8, color: S.textMuted, letterSpacing: "0.15em", textTransform: "uppercase", padding: "6px 20px", background: S.surface, borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 10 }}>{label}<div style={{ flex: 1, height: 1, background: S.border }} /></div>;
+}
+
+function KPI({ label, val, sub, accent }: any) {
+  return (
+    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: "12px 14px", position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent || S.green, opacity: .6 }} />
+      <div className="mono" style={{ fontSize: 8, letterSpacing: "0.1em", color: S.textDim, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+      <div className="orb" style={{ fontSize: 24, color: S.text, lineHeight: 1, marginBottom: 3 }}>{val}</div>
+      {sub && <div className="mono" style={{ fontSize: 8, color: S.textMuted }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Date Picker ── */
+function DatePicker({ preset, onPreset, from, to, onFrom, onTo }: any) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ display: "flex", gap: 2, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, padding: 3 }}>
-        {(["week","month","year","custom"] as const).map(p => (
-          <button key={p} onClick={() => onPreset(p)} className="mono" style={{ padding: "3px 10px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", background: preset === p ? S.greenPale : "transparent", color: preset === p ? S.greenHi : S.textDim }}>
-            {p.toUpperCase()}
-          </button>
+      <div style={{ display: "flex", gap: 2, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 5, padding: 2 }}>
+        {(["week", "month", "year", "custom"] as const).map(p => (
+          <button key={p} onClick={(e) => { e.stopPropagation(); onPreset(p); }} className="mono" style={{ padding: "2px 8px", borderRadius: 3, border: "none", cursor: "pointer", fontSize: 8, letterSpacing: "0.06em", background: preset === p ? S.greenPale : "transparent", color: preset === p ? S.greenHi : S.textDim }}>{p.toUpperCase()}</button>
         ))}
       </div>
       {preset === "custom" && (
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <input type="date" value={customFrom} onChange={e => onCustomFrom(e.target.value)} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textDim, padding: "2px 6px", fontSize: 9 }} />
-          <ArrowRight size={10} color={S.textMuted} />
-          <input type="date" value={customTo} onChange={e => onCustomTo(e.target.value)} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textDim, padding: "2px 6px", fontSize: 9 }} />
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+          <input type="date" value={from} onChange={e => onFrom(e.target.value)} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textDim, padding: "1px 5px", fontSize: 8 }} />
+          <ArrowRight size={8} color={S.textMuted} />
+          <input type="date" value={to} onChange={e => onTo(e.target.value)} className="mono" style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textDim, padding: "1px 5px", fontSize: 8 }} />
         </div>
       )}
     </div>
   );
 }
 
-/* ─── Chunk Wrapper ─── */
-function Chunk({ id, index, name, focused, onClick, loading, children }: any) {
-  const cmds: Record<string, string> = { funnel: '"show pipeline"', outreach: '"show outreach"', meetings: '"show meetings"', offers: '"show offers"' };
-  return (
-    <div onClick={onClick} style={{ borderBottom: `1px solid ${S.border}`, padding: "24px 28px", cursor: "default", position: "relative", background: focused ? "rgba(93,129,86,0.04)" : "transparent", borderLeft: focused ? `2px solid ${S.green}` : "2px solid transparent", animation: "fadeUp 0.4s ease both" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="mono" style={{ fontSize: 9, color: S.textMuted, letterSpacing: "0.1em" }}>{index} /</span>
-          <span className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", color: S.textDim, textTransform: "uppercase" }}>{name}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 8, color: S.greenDim, letterSpacing: "0.06em", background: S.greenPale, border: `1px solid ${S.border}`, borderRadius: 4, padding: "2px 7px", opacity: focused ? 1 : 0, transition: "opacity 0.2s" }}>{cmds[id]}</span>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: loading ? S.amber : S.green, animation: loading ? "pulse 1.5s ease infinite" : "none" }} />
-        </div>
-      </div>
-      {focused && (
-        <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(93,129,86,0.06)", border: `1px solid ${S.borderHi}`, borderRadius: 6, fontSize: 9, color: S.greenHi, letterSpacing: "0.06em", marginBottom: 16 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: S.green, animation: "pulse 2s ease infinite" }} />
-          JARVIS focused — say &quot;summarise&quot; for AI briefing
-        </div>
-      )}
-      {loading ? <Skeleton /> : children}
-    </div>
-  );
-}
-
-function Divider({ label }: { label: string }) {
-  return (
-    <div className="mono" style={{ fontSize: 9, color: S.textMuted, letterSpacing: "0.15em", textTransform: "uppercase", padding: "7px 28px", background: S.surface, borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 12 }}>
-      {label}<div style={{ flex: 1, height: 1, background: S.border }} />
-    </div>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div style={{ display: "flex", gap: 12 }}>
-      {[1,2,3].map(i => (
-        <div key={i} style={{ flex: 1, height: 80, borderRadius: 8, background: S.surface, border: `1px solid ${S.border}`, animation: "pulse 1.5s ease infinite" }} />
-      ))}
-    </div>
-  );
-}
-
-function KPI({ label, value, sub, accent }: any) {
-  return (
-    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: "14px 16px", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent || S.green, opacity: 0.6 }} />
-      <div className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: S.textDim, textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
-      <div className="orb" style={{ fontSize: 26, color: S.text, lineHeight: 1, marginBottom: 4 }}>{value}</div>
-      {sub && <div className="mono" style={{ fontSize: 9, color: S.textMuted }}>{sub}</div>}
-    </div>
-  );
-}
-
-/* ─── Chunk 01: Sales Funnel ─── */
-function SalesFunnel({ m }: { m: SalesMetrics }) {
-  const f = m.funnel;
+/* ── Section 01: Period Funnel ── */
+function PeriodFunnel({ m }: { m: Metrics }) {
+  const p = m.period;
   const r = m.rates;
-
-  // The funnel stages in order — each shows absolute count and % of the step above
-  const stages = [
-    { label: "Cold Leads",         sub: "New leads added",                value: f.cold,              color: S.green,    barWidth: 100 },
-    { label: "Qualified",          sub: "Entered pipeline",                value: f.qualified,         color: S.greenHi,  barWidth: f.cold > 0 ? Math.round((f.qualified / Math.max(f.cold, f.totalPipeline)) * 100) : 0 },
-    { label: "In the Future",      sub: "Too early (from call + general)", value: f.future,            color: S.blue,     barWidth: f.totalPipeline > 0 ? Math.round((f.future / f.totalPipeline) * 100) : 0, dimmed: true },
-    { label: "Abandoned at Call",  sub: "Dropped during outreach",         value: f.abandonedFromCall, color: S.red,      barWidth: f.totalPipeline > 0 ? Math.round((f.abandonedFromCall / f.totalPipeline) * 100) : 0, dimmed: true },
-    { label: "Web Meeting Booked", sub: "Calendly booking confirmed",      value: f.webMeetingBooked,  color: S.amber,    barWidth: f.totalPipeline > 0 ? Math.round(((f.webMeetingBooked + f.noShow + f.warm + f.specialOffer) / f.totalPipeline) * 100) : 0 },
-    { label: "No Show",            sub: "Missed the meeting",              value: f.noShow,            color: S.red,      barWidth: (f.webMeetingBooked + f.noShow) > 0 ? Math.round((f.noShow / (f.webMeetingBooked + f.noShow + f.warm + f.specialOffer)) * 100) : 0, dimmed: true },
-    { label: "Warm (Attended)",    sub: "Meeting sat, converting",         value: f.warm,              color: "#e8a84a",  barWidth: (f.warm + f.specialOffer + f.customer) > 0 ? Math.round((f.warm / (f.warm + f.specialOffer + f.customer)) * 100) : 0 },
-    { label: "Special Offer Applied", sub: "Offer made to lead",           value: f.specialOffer,      color: "#9d50dd",  barWidth: (f.warm + f.specialOffer + f.customer) > 0 ? Math.round((f.specialOffer / (f.warm + f.specialOffer + f.customer)) * 100) : 0 },
-    { label: "Customer / Signed",  sub: "Converted successfully",          value: f.customer,          color: S.green,    barWidth: (f.warm + f.specialOffer + f.customer) > 0 ? Math.round((f.customer / (f.warm + f.specialOffer + f.customer)) * 100) : 0 },
+  const funnelRows = [
+    { label: "Total Leads Added",          val: p.totalLeads,         pct: 100,                                                                                  color: S.green,   note: null as string | null },
+    { label: "Presentations Sent",         val: p.presentationsSent,  pct: p.totalLeads > 0 ? Math.round(p.presentationsSent / p.totalLeads * 100) : 0,           color: S.greenHi, note: null as string | null },
+    { label: "Presentations Viewed",       val: p.presentationsViewed, pct: p.presentationsSent > 0 ? r.presentationEngagement : 0,                              color: S.blue,    note: `${r.presentationEngagement}% engagement` },
+    { label: "Web Meetings (sat)",         val: p.webMeetingsSat,     pct: p.totalLeads > 0 ? Math.round(p.webMeetingsSat / p.totalLeads * 100) : 0,             color: S.amber,   note: null as string | null },
+    { label: "Web Meetings (missed/no show)", val: p.webMeetingsMissed, pct: p.totalLeads > 0 ? Math.round(p.webMeetingsMissed / p.totalLeads * 100) : 0,         color: S.red,     note: "drop-off", dimmed: true },
+    { label: "Web Meetings (upcoming/booked)", val: p.webMeetingsUpcoming, pct: p.totalLeads > 0 ? Math.round(p.webMeetingsUpcoming / p.totalLeads * 100) : 0,    color: S.amber,   note: "not yet sat" },
+    { label: "Customers Won",              val: p.customersWon,       pct: p.totalLeads > 0 ? Math.round(p.customersWon / p.totalLeads * 100) : 0,               color: S.green,   note: `${r.customerRate}% conversion` },
   ];
 
   return (
     <>
-      {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 24 }}>
-        <KPI label="Cold Leads" value={f.cold} sub="In pipeline" />
-        <KPI label="Qualified" value={f.qualified} sub="Active pipeline" />
-        <KPI label="Web Meetings" value={f.webMeetingBooked + f.noShow + f.warm + f.specialOffer} sub="Total booked" accent={S.amber} />
-        <KPI label="Customers" value={f.customer} sub="Total converted" accent={S.greenHi} />
-        <KPI label="Post-Meeting Close" value={`${r.postMeetingConversion}%`} sub="Warm + offer → customer" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
+        <KPI label="Total Leads"     val={p.totalLeads}       sub="Added in period" />
+        <KPI label="Web Meetings"    val={p.totalWebMeetings} sub="Sat + missed + booked" accent={S.amber} />
+        <KPI label="Attendance"      val={`${r.attendanceRate}%`} sub="Of meetings that ran" />
+        <KPI label="Customers Won"   val={p.customersWon}     sub={`${r.customerRate}% of leads`} accent={S.greenHi} />
       </div>
-
-      {/* Funnel bars */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {stages.map((stage, i) => (
-          <div key={i} style={{ opacity: stage.dimmed ? 0.75 : 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {stage.dimmed && <span className="mono" style={{ fontSize: 9, color: S.red }}>▼</span>}
-                <span className="mono" style={{ fontSize: 10, color: stage.dimmed ? S.textMuted : S.textDim }}>{stage.label}</span>
-                <span className="mono" style={{ fontSize: 9, color: S.textMuted }}>{stage.sub}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {funnelRows.map((row, i) => (
+          <div key={i} style={{ opacity: (row as any).dimmed ? 0.7 : 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {(row as any).dimmed && <span style={{ color: S.red, fontSize: 9 }}>▼</span>}
+                <span className="mono" style={{ fontSize: 9, color: (row as any).dimmed ? S.textMuted : S.textDim }}>{row.label}</span>
+                {row.note && <span className="mono" style={{ fontSize: 8, color: S.textMuted, background: S.surface2, padding: "1px 5px", borderRadius: 3 }}>{row.note}</span>}
               </div>
-              <span className="mono" style={{ fontSize: 11, color: S.greenHi, fontWeight: 500 }}>{stage.value}</span>
+              <span className="mono" style={{ fontSize: 10, color: S.greenHi, fontWeight: 500 }}>{row.val}</span>
             </div>
-            <div style={{ height: 8, background: S.surface2, borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 4, width: `${Math.max(stage.barWidth, stage.value > 0 ? 2 : 0)}%`, background: `linear-gradient(90deg, ${stage.color}88, ${stage.color})`, transition: "width 0.8s ease" }} />
+            <div style={{ height: 6, background: S.surface2, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 3, width: `${Math.max(row.pct, row.val > 0 ? 1 : 0)}%`, background: `linear-gradient(90deg,${row.color}66,${row.color})`, transition: "width .8s ease" }} />
             </div>
           </div>
         ))}
       </div>
-
-      {/* Abandoned summary */}
-      {f.abandonedGeneral > 0 && (
-        <div className="mono" style={{ marginTop: 16, padding: "8px 12px", background: "rgba(155,58,58,0.06)", border: `1px solid rgba(155,58,58,0.2)`, borderRadius: 6, fontSize: 9, color: S.textDim }}>
-          Total abandoned (all stages): <span style={{ color: "#e07070" }}>{f.abandonedGeneral + f.abandonedFromCall}</span>
-          <span style={{ marginLeft: 16 }}>In the future (nurture): <span style={{ color: S.blue }}>{f.future}</span></span>
+      {p.abandonedInPeriod > 0 && (
+        <div className="mono" style={{ marginTop: 12, padding: "7px 10px", background: "rgba(155,58,58,.06)", border: "1px solid rgba(155,58,58,.2)", borderRadius: 5, fontSize: 8, color: S.textDim }}>
+          Abandoned in period: <span style={{ color: "#e07070" }}>{p.abandonedInPeriod}</span>
         </div>
       )}
     </>
   );
 }
 
-/* ─── Chunk 02: Outreach ─── */
-function OutreachMetrics({ m }: { m: SalesMetrics }) {
-  const o = m.outreach;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-      <ChannelCard
-        title="Voice Calls — Lucy"
-        big={o.callsMade}
-        sub="Calls made"
-        stats={[
-          { label: "Answer rate", value: "—" },
-          { label: "Call → web meeting", value: "—" },
-        ]}
-      />
-      <ChannelCard
-        title="Pre-Qualification Email"
-        big={o.presentationViewed}
-        sub={`Presentations viewed (${m.rates.engagementRate}% rate)`}
-        stats={[
-          { label: "Emails sent", value: String(o.presentationEmailSent) },
-          { label: "Engagement rate", value: `${m.rates.engagementRate}%` },
-        ]}
-      />
-      <ChannelCard
-        title="WhatsApp Outreach"
-        big={o.waActive ? o.waMessagesSent : null}
-        sub={o.waActive ? "Messages sent" : "Not yet active"}
-        comingSoon={!o.waActive}
-        stats={[
-          { label: "Reply rate", value: o.waActive ? `${o.waReplyRate}%` : null },
-          { label: "WhatsApp → meeting", value: null },
-        ]}
-      />
-    </div>
-  );
-}
-
-function ChannelCard({ title, big, sub, stats, comingSoon }: any) {
-  return (
-    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16, position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${S.green}, transparent)`, opacity: 0.4 }} />
-      <div className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: S.greenDim, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ width: 5, height: 5, borderRadius: "50%", background: comingSoon ? S.textMuted : S.green }} />{title}
-      </div>
-      <div className="orb" style={{ fontSize: 32, color: comingSoon ? S.textMuted : S.text, lineHeight: 1, marginBottom: 3 }}>{big !== null ? big : "—"}</div>
-      <div className="mono" style={{ fontSize: 9, color: S.textMuted, marginBottom: 14 }}>{sub}</div>
-      {stats.map((s: any, i: number) => (
-        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${S.border}` }}>
-          <span className="mono" style={{ fontSize: 9, color: S.textDim }}>{s.label}</span>
-          {s.value !== null ? (
-            <span className="mono" style={{ fontSize: 10, color: S.greenHi, fontWeight: 500 }}>{s.value}</span>
-          ) : (
-            <span className="mono" style={{ fontSize: 9, color: S.textMuted, background: S.surface2, border: `1px dashed ${S.textMuted}`, borderRadius: 4, padding: "1px 6px", opacity: 0.6 }}>Coming soon</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Chunk 03: Web Meetings ─── */
-function WebMeetingMetrics({ m }: { m: SalesMetrics }) {
-  const f = m.funnel;
+/* ── Section 02: Live Snapshot ── */
+function LiveSnapshot({ m }: { m: Metrics }) {
+  const s = m.snapshot;
   const r = m.rates;
-  const totalBooked = f.webMeetingBooked + f.noShow + f.warm + f.specialOffer;
-  const bc = {
-    green: { bg: "rgba(93,129,86,0.15)", text: S.greenHi, border: "rgba(93,129,86,0.3)" },
-    amber: { bg: "rgba(200,146,42,0.15)", text: S.amber, border: "rgba(200,146,42,0.3)" },
-    blue:  { bg: "rgba(58,107,155,0.15)", text: "#70a8e0", border: "rgba(58,107,155,0.3)" },
-  };
-  const cards = [
-    { label: "Total Booked",       value: totalBooked,                                  desc: "All time",                                                                badge: "blue",  badgeText: "All time" },
-    { label: "Attendance Rate",    value: `${r.attendanceRate}%`,                       desc: `${f.warm + f.specialOffer + f.customer} attended of ${totalBooked}`,    badge: r.attendanceRate >= 70 ? "green" : "amber",          badgeText: r.attendanceRate >= 70 ? "Good" : "Below target" },
-    { label: "No Shows",           value: f.noShow,                                     desc: "Currently in no-show group",                                              badge: f.noShow > 5 ? "amber" : "green",                    badgeText: f.noShow > 5 ? "Action needed" : "Managed" },
-    { label: "Post-Meeting Close", value: `${r.postMeetingConversion}%`,                desc: `${f.customer} converted of ${f.warm + f.specialOffer + f.customer}`,    badge: r.postMeetingConversion >= 30 ? "green" : "amber",   badgeText: r.postMeetingConversion >= 30 ? "Strong" : "Focus here" },
+  const rows = [
+    { label: "Qualified (active pipeline)",       val: s.qualified,    color: S.green },
+    { label: "Web meeting booked (upcoming)",     val: s.booked,       color: S.amber },
+    { label: "No shows (to re-engage)",           val: s.noShow,       color: S.red },
+    { label: "Warm (attended, converting)",       val: s.warm,         color: S.amber },
+    { label: "Special offer applied",             val: s.specialOffer, color: S.purple },
+    { label: "Total customers (all time)",        val: s.customer,     color: S.greenHi },
+    { label: "Future / nurture",                  val: s.future,       color: S.blue },
+    { label: "Abandoned (all time)",              val: s.abandoned,    color: S.textMuted },
   ];
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
-        {cards.map((c, i) => {
-          const b = bc[c.badge as keyof typeof bc] || bc.green;
-          return (
-            <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: 14 }}>
-              <div className="mono" style={{ fontSize: 9, letterSpacing: "0.1em", color: S.textDim, textTransform: "uppercase", marginBottom: 8 }}>{c.label}</div>
-              <div className="orb" style={{ fontSize: 24, color: S.text, marginBottom: 3 }}>{c.value}</div>
-              <div className="mono" style={{ fontSize: 9, color: S.textMuted, marginBottom: 6 }}>{c.desc}</div>
-              <span className="mono" style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: b.bg, color: b.text, border: `1px solid ${b.border}` }}>{c.badgeText}</span>
-            </div>
-          );
-        })}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 16 }}>
+        <KPI label="Currently Warm"    val={s.warm}                  sub="Need converting" accent={S.amber} />
+        <KPI label="Special Offer"     val={s.specialOffer}          sub="Offer made"      accent={S.purple} />
+        <KPI label="Post-Meeting Close" val={`${r.postMeetingClose}%`} sub="Warm+offer→customer" />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: 14 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.1em", color: S.textDim, textTransform: "uppercase", marginBottom: 10 }}>Post-Meeting Pipeline</div>
-          {[
-            { label: "Warm leads (converting)", value: f.warm },
-            { label: "Special offer applied",   value: f.specialOffer },
-            { label: "Customers signed",        value: f.customer },
-          ].map((row, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${S.border}` }}>
-              <span className="mono" style={{ fontSize: 9, color: S.textDim }}>{row.label}</span>
-              <span className="mono" style={{ fontSize: 10, color: S.greenHi, fontWeight: 500 }}>{row.value}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: 14 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.1em", color: S.textDim, textTransform: "uppercase", marginBottom: 10 }}>Pipeline Requiring Action</div>
-          {[
-            { label: "No-shows to re-engage", value: f.noShow },
-            { label: "Warm leads to close",   value: f.warm },
-            { label: "Future leads to nurture", value: f.future },
-            { label: "Abandoned at call",     value: f.abandonedFromCall },
-          ].map((row, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: `1px solid ${S.border}` }}>
-              <span className="mono" style={{ fontSize: 9, color: S.textDim }}>{row.label}</span>
-              <span className="mono" style={{ fontSize: 10, color: row.value > 0 ? S.amber : S.greenHi, fontWeight: 500 }}>{row.value}</span>
-            </div>
-          ))}
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {rows.map((row, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${S.border}` }}>
+            <span className="mono" style={{ fontSize: 9, color: S.textDim }}>{row.label}</span>
+            <span className="orb" style={{ fontSize: 16, color: row.color }}>{row.val}</span>
+          </div>
+        ))}
       </div>
     </>
   );
 }
 
-/* ─── Chunk 04: Special Offers ─── */
-function SpecialOffers({ m }: { m: SalesMetrics }) {
+/* ── Section 03: Outreach ── */
+function OutreachPanel({ m }: { m: Metrics }) {
+  const p = m.period;
+  const r = m.rates;
+  const wa = m.whatsapp;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+      {/* Calls */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: 14 }}>
+        <div className="mono" style={{ fontSize: 8, color: S.greenDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 4, height: 4, borderRadius: "50%", background: S.green }} />VOICE CALLS — LUCY
+        </div>
+        <div className="orb" style={{ fontSize: 28, color: S.text, lineHeight: 1, marginBottom: 3 }}>{p.callsMade}</div>
+        <div className="mono" style={{ fontSize: 8, color: S.textMuted, marginBottom: 12 }}>Calls with recordings in period</div>
+        <Row label="Answer rate" val="—" />
+        <Row label="Call → web meeting" val="—" />
+      </div>
+      {/* Email */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: 14 }}>
+        <div className="mono" style={{ fontSize: 8, color: S.greenDim, marginBottom: 10, display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 4, height: 4, borderRadius: "50%", background: S.green }} />PRE-QUALIFICATION EMAIL
+        </div>
+        <div className="orb" style={{ fontSize: 28, color: S.text, lineHeight: 1, marginBottom: 3 }}>{p.presentationsSent}</div>
+        <div className="mono" style={{ fontSize: 8, color: S.textMuted, marginBottom: 12 }}>Presentations sent in period</div>
+        <Row label="Viewed" val={String(p.presentationsViewed)} />
+        <Row label="Engagement rate" val={`${r.presentationEngagement}%`} />
+      </div>
+      {/* WhatsApp */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: 14 }}>
+        <div className="mono" style={{ fontSize: 8, color: wa.active ? S.greenDim : S.textMuted, marginBottom: 10, display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ width: 4, height: 4, borderRadius: "50%", background: wa.active ? S.green : S.textMuted }} />WHATSAPP OUTREACH
+        </div>
+        <div className="orb" style={{ fontSize: 28, color: wa.active ? S.text : S.textMuted, lineHeight: 1, marginBottom: 3 }}>{wa.active ? wa.messagesSent : "—"}</div>
+        <div className="mono" style={{ fontSize: 8, color: S.textMuted, marginBottom: 12 }}>{wa.active ? "Messages sent" : "Not yet active"}</div>
+        <Row label="Reply rate" val={wa.active ? `${wa.replyRate}%` : null} />
+        <Row label="WhatsApp → meeting" val={null} />
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, val }: { label: string; val: string | null }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: `1px solid ${S.border}` }}>
+      <span className="mono" style={{ fontSize: 8, color: S.textDim }}>{label}</span>
+      {val !== null
+        ? <span className="mono" style={{ fontSize: 9, color: S.greenHi, fontWeight: 500 }}>{val}</span>
+        : <span className="mono" style={{ fontSize: 8, color: S.textMuted, background: S.surface2, border: `1px dashed ${S.textMuted}`, borderRadius: 3, padding: "0 5px", opacity: .6 }}>coming soon</span>
+      }
+    </div>
+  );
+}
+
+/* ── Section 04: Offers ── */
+function OffersPanel({ m }: { m: Metrics }) {
   const o = m.offers;
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-        <KPI label="Active Offers" value={o.active} sub="Awaiting decision" />
-        <KPI label="Expiring This Week" value={o.expiringThisWeek} accent={o.expiringThisWeek > 0 ? S.red : S.green} sub={o.expiringThisWeek > 0 ? "Action required" : "All clear"} />
-        <KPI label="Expiring This Month" value={o.expiringThisMonth} accent={S.amber} />
-        <KPI label="Offer → Customer" value="—" sub="Tracking coming soon" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+        <KPI label="Active Offers"        val={o.active}            sub="Awaiting decision" />
+        <KPI label="Expiring This Week"   val={o.expiringThisWeek}  sub={o.expiringThisWeek > 0 ? "Action required" : "All clear"} accent={o.expiringThisWeek > 0 ? S.red : S.green} />
+        <KPI label="Expiring This Month"  val={o.expiringThisMonth} sub="Total expiring 30d" accent={S.amber} />
       </div>
       {o.items.length > 0 ? (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>{["Lead", "Address", "Offer Type", "Expiry", "Days Left"].map(h => (
-                <th key={h} className="mono" style={{ padding: "8px 12px", textAlign: "left", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: S.textMuted, fontWeight: 500, borderBottom: `1px solid ${S.border}` }}>{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {o.items.map(item => {
-                const urgent = item.daysLeft !== null && item.daysLeft <= 7;
-                const soon = item.daysLeft !== null && item.daysLeft <= 30;
-                return (
-                  <tr key={item.id} style={{ borderBottom: `1px solid rgba(93,129,86,0.06)` }}>
-                    <td className="mono" style={{ padding: "10px 12px", fontSize: 11, color: S.text }}>{item.name}</td>
-                    <td className="mono" style={{ padding: "10px 12px", fontSize: 11, color: S.textDim }}>{item.address || "—"}</td>
-                    <td className="mono" style={{ padding: "10px 12px", fontSize: 11, color: S.textDim }}>{item.offerType || "—"}</td>
-                    <td className="mono" style={{ padding: "10px 12px", fontSize: 11, color: urgent ? "#e07070" : soon ? S.amber : S.textDim }}>{item.expiry || "—"}</td>
-                    <td className="mono" style={{ padding: "10px 12px", fontSize: 11, fontWeight: 500, color: urgent ? "#e07070" : soon ? S.amber : S.textDim }}>
-                      {item.daysLeft !== null ? `${item.daysLeft}d` : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>{["Lead", "Address", "Offer", "Expiry", "Days Left"].map(h => (
+              <th key={h} className="mono" style={{ padding: "6px 10px", textAlign: "left", fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: S.textMuted, fontWeight: 400, borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {o.items.map(item => {
+              const urg = item.daysLeft !== null && item.daysLeft <= 7;
+              const soon = item.daysLeft !== null && item.daysLeft <= 30;
+              return (
+                <tr key={item.id} style={{ borderBottom: "1px solid rgba(93,129,86,.06)" }}>
+                  <td className="mono" style={{ padding: "8px 10px", fontSize: 10, color: S.text }}>{item.name}</td>
+                  <td className="mono" style={{ padding: "8px 10px", fontSize: 9, color: S.textDim }}>{item.address || "—"}</td>
+                  <td className="mono" style={{ padding: "8px 10px", fontSize: 9, color: S.textDim }}>{item.offerType || "—"}</td>
+                  <td className="mono" style={{ padding: "8px 10px", fontSize: 9, color: urg ? "#e07070" : soon ? S.amber : S.textDim }}>{item.expiry || "—"}</td>
+                  <td className="mono" style={{ padding: "8px 10px", fontSize: 9, fontWeight: 500, color: urg ? "#e07070" : soon ? S.amber : S.textDim }}>{item.daysLeft !== null ? `${item.daysLeft}d` : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       ) : (
-        <div className="mono" style={{ fontSize: 11, color: S.textMuted, textAlign: "center", padding: 20 }}>No active special offers</div>
+        <div className="mono" style={{ fontSize: 10, color: S.textMuted, textAlign: "center", padding: 16 }}>No active special offers</div>
       )}
     </>
+  );
+}
+
+/* ── Section 05: JARVIS Query Panel ── */
+function QueryPanel({ metrics }: { metrics: Metrics }) {
+  const [query, setQuery] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [autoSummary, setAutoSummary] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/sales/summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metrics }),
+    }).then(r => r.json()).then(d => {
+      if (d.summary) setAutoSummary(d.summary);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ask = async (text?: string) => {
+    const q = text || query.trim();
+    if (!q) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/sales/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metrics, question: q }),
+      });
+      const d = await res.json();
+      setAnswer(d.summary || "No response.");
+      setQuery("");
+    } catch {
+      setAnswer("Error reaching JARVIS.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ background: "rgba(93,129,86,.04)", border: "1px solid rgba(93,129,86,.25)", borderRadius: 8, padding: 16 }}>
+      <div className="mono" style={{ fontSize: 8, letterSpacing: "0.12em", color: S.greenHi, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: S.green, animation: "pulse 2s ease infinite" }} />
+        JARVIS — say your question aloud or type below
+      </div>
+      {(answer || autoSummary) && (
+        <p style={{ fontSize: 12, color: answer ? S.text : S.textDim, lineHeight: 1.65, marginBottom: 14, fontWeight: 300 }}>{answer || autoSummary}</p>
+      )}
+      <div style={{ display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") ask(); }}
+          placeholder={`e.g. "if all ${metrics.snapshot.specialOffer} special offer leads sign, what is my conversion rate?"`}
+          style={{ flex: 1, background: S.surface, border: "1px solid rgba(93,129,86,.3)", borderRadius: 5, color: S.text, padding: "7px 10px", fontSize: 11, fontFamily: "Rajdhani, sans-serif", outline: "none" }}
+        />
+        <button onClick={() => ask()} disabled={loading || !query.trim()} className="mono" style={{ padding: "7px 14px", borderRadius: 5, border: "1px solid rgba(93,129,86,.4)", background: loading ? "transparent" : "rgba(93,129,86,.15)", color: S.greenHi, cursor: loading ? "default" : "pointer", fontSize: 8, letterSpacing: "0.1em" }}>
+          {loading ? "THINKING..." : "ASK"}
+        </button>
+      </div>
+      <div className="mono" style={{ fontSize: 8, color: S.textMuted, marginTop: 8 }}>
+        When you speak to JARVIS while this view is open, your question is automatically sent here. Voice answers come through JARVIS.
+      </div>
+    </div>
   );
 }

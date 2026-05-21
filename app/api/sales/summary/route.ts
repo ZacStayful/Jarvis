@@ -1,133 +1,47 @@
-// app/api/sales/summary/route.ts
-// Server-side Claude summary for Chunk 01 (Pipeline Overview).
-// Generates a 4–5 sentence briefing using the Stayful lead-intelligence
-// framework. Separate from /api/sales so it never blocks the dashboard's
-// first paint.
-
-import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-import {
-  fetchAllLeads,
-  buildPipeline,
-  buildOutreach,
-  buildOffers,
-} from '@/lib/sales/server';
+import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 30;
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-const anthropic = new Anthropic();
-const MODEL = 'claude-sonnet-4-6';
-
-const SUMMARY_SYSTEM = `You are JARVIS, briefing Zac (founder of Stayful, Sheffield-based STR management) on his sales pipeline.
-
-SALES FRAMEWORK: VALIDATE → REFRAME → QUANTIFY → PROOF → QUESTION.
-
-REFERENCE THESE CONCEPTS WHERE THE DATA WARRANTS:
-- "revenue floor" — counter to the income-consistency objection.
-- "fast-path signals" — revenue questions early, clear timeline, no mortgage complications. Profiles 1–3.
-- "slow-path signals" — repeating objections, no timeline, residential mortgage. Profiles 5–6.
-- 50% cold-to-web-meeting target.
-- 12–15% web-meeting-to-customer target.
-- Post-meeting inaction pattern: high Warm count, low Customer count → urgency triggers not landing.
-
-STYLE: calm, British, definitive. 4–5 sentences. Identify ONE primary bottleneck and ONE next action. Reference at most two numbers. No markdown. No bullets. No preamble. Talk to Zac directly.`;
-
-// POST { metrics, question? } — voice-driven Q&A. The dashboard sends its
-// already-loaded metrics so this endpoint doesn't re-paginate Monday. When
-// `question` is present, Claude answers it using the metrics as context;
-// otherwise it produces an opening briefing.
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const metrics = body?.metrics;
-    const question: string | undefined = body?.question;
+    const { metrics, question } = await req.json();
+    const p = metrics?.period;
+    const s = metrics?.snapshot;
+    const r = metrics?.rates;
+    if (!p) return NextResponse.json({ error: "No metrics" }, { status: 400 });
 
-    if (!metrics) {
-      return NextResponse.json(
-        { error: 'metrics object required in POST body' },
-        { status: 400 },
-      );
-    }
+    const system = `You are JARVIS, Stayful's AI intelligence layer.
 
-    const isQuestion = typeof question === 'string' && question.trim().length > 0;
+Speak directly to Zac, the founder. Be precise, confident, brief. Use specific numbers always. Apply VALIDATE then REFRAME then QUANTIFY when analysing drop-offs. Reference "revenue floor" not "minimum income". For hypotheticals: show the exact calculation, then the implication. Maximum 4 sentences for summaries. Maximum 3 sentences for hypotheticals.`;
 
-    const userPrompt = isQuestion
-      ? `Zac asked aloud: "${question.trim()}"\n\nAnswer using these current sales metrics. Keep it to 2–3 spoken sentences. No bullets, no markdown — this will be read aloud.\n\nMetrics:\n${JSON.stringify(metrics, null, 2)}`
-      : `Brief Zac on his current sales pipeline in 3–4 spoken sentences. Identify ONE bottleneck and ONE next action. No bullets, no markdown — this will be read aloud.\n\nMetrics:\n${JSON.stringify(metrics, null, 2)}`;
+    const context = `Current pipeline data:
 
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      system: SUMMARY_SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+Period metrics: ${p.totalLeads} leads added, ${p.webMeetingsSat} web meetings sat, ${p.webMeetingsMissed} no shows, ${p.webMeetingsUpcoming} upcoming, ${p.customersWon} customers won, ${p.presentationsSent} presentations sent, ${p.presentationsViewed} viewed (${r.presentationEngagement}% engagement), ${p.callsMade} calls. Live snapshot: ${s.qualified} qualified, ${s.booked} booked, ${s.noShow} no shows, ${s.warm} warm, ${s.specialOffer} special offer, ${s.customer} total customers, ${s.future} future. Rates: ${r.webMeetingRate}% meeting rate, ${r.attendanceRate}% attendance, ${r.customerRate}% conversion, ${r.postMeetingClose}% post-meeting close. Offers expiring this week: ${metrics.offers?.expiringThisWeek}.`;
 
-    const summary = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => (c as { type: 'text'; text: string }).text)
-      .join('')
-      .trim();
+    const userMsg = question
+      ? `${context}\n\nZac asks: ${question}\n\nAnswer directly. Show calculation if hypothetical. Give one clear action.`
+      : `${context}\n\nGive Zac a 4-sentence pipeline briefing. Identify the biggest drop-off. Flag fast-path signals. Name one action for today.`;
 
-    return NextResponse.json(
-      { summary, model: MODEL, generatedAt: new Date().toISOString() },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
-  } catch (error) {
-    console.error('[Sales Summary POST]', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 },
-    );
-  }
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
-
-    const items = await fetchAllLeads({ from, to });
-    const metrics = {
-      total: items.length,
-      pipeline: buildPipeline(items),
-      outreach: buildOutreach(items),
-      offers: buildOffers(items),
-      dateRange: { from, to },
-    };
-
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 500,
-      system: SUMMARY_SYSTEM,
-      messages: [
-        {
-          role: 'user',
-          content: `Brief me on the pipeline for ${from || 'all time'} to ${to || 'now'}. Metrics:\n\n${JSON.stringify(metrics, null, 2)}`,
-        },
-      ],
-    });
-
-    const summary = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => (c as { type: 'text'; text: string }).text)
-      .join('')
-      .trim();
-
-    return NextResponse.json(
-      {
-        summary,
-        model: MODEL,
-        generatedAt: new Date().toISOString(),
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
-      { headers: { 'Cache-Control': 'private, max-age=300' } },
-    );
-  } catch (error) {
-    console.error('[Sales Summary API]', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 },
-    );
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 400,
+        system,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || "Unable to generate summary.";
+    return NextResponse.json({ summary: text, isHypothetical: !!question });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown" }, { status: 500 });
   }
 }

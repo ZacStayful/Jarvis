@@ -40,6 +40,7 @@ import {
 import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
 import { isLikelyEcho } from "@/lib/voice-echo-filter";
 import { LucyView } from "@/views/LucyView";
+import { SalesDashboard } from "@/components/sales/SalesDashboard";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
 import { BrainNetwork } from "@/components/jarvis/BrainNetwork";
@@ -121,6 +122,9 @@ export default function JarvisPage() {
   // Portfolio Intelligence Dashboard (mounted inline inside the JARVIS shell)
   const [portfolioOpen, setPortfolioOpen] = useState(false);
 
+  // Sales Intelligence Dashboard (mounted inline inside the JARVIS shell)
+  const [salesOpen, setSalesOpen] = useState(false);
+
   // Centralised "switch view" helper — every nav intent must clear its
   // siblings first, otherwise the render precedence makes the first-opened
   // view sticky (see app/page.tsx:306–323 ternary chain).
@@ -129,6 +133,7 @@ export default function JarvisPage() {
     setRoutedView(null);
     setLucyOpen(false);
     setPortfolioOpen(false);
+    setSalesOpen(false);
     setNewsActiveCategory(undefined);
     setNewsCategoriesFilter(undefined);
     loadedArticlesRef.current = null;
@@ -412,7 +417,8 @@ export default function JarvisPage() {
 
     const sales = detectSalesCommand(text);
     if (sales === 'navigate') {
-      router.push('/sales');
+      clearAllViews();
+      setSalesOpen(true);
       return;
     }
     const lucy = detectLucyCommand(text);
@@ -556,6 +562,10 @@ export default function JarvisPage() {
         {portfolioOpen ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0, display: "flex" }}>
             <PortfolioView />
+          </div>
+        ) : salesOpen ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <SalesDashboard />
           </div>
         ) : lucyOpen ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
