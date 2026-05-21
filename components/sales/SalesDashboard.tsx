@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { pick, SECTION_ACK, QUERY_START, FOLLOW_UP, SILENCE_PROMPT } from "@/lib/sales/voice-phrases";
 
 const S = {
   bg: "#080c09", surface: "#0e1410", surface2: "#131a14",
@@ -50,13 +51,21 @@ interface M {
   dateRange: { from: string | null; to: string | null; filtered: boolean };
 }
 
-export function SalesDashboard() {
+export function SalesDashboard({
+  onMetricsLoaded,
+  externalAnswer,
+  onSectionFocus,
+}: {
+  onMetricsLoaded?: (m: any) => void;
+  externalAnswer?: string | null;
+  onSectionFocus?: (sectionId: string, metrics: any) => void;
+} = {}) {
   const [m, setM] = useState<M | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [preset, setPreset] = useState<"week" | "month" | "year" | "custom">("month");
-  const [cf, setCf] = useState("");
-  const [ct, setCt] = useState("");
+  const [preset, setPreset] = useState<"week" | "month" | "year" | "custom">("custom");
+  const [cf, setCf] = useState("2026-05-01");
+  const [ct, setCt] = useState(new Date().toISOString().split("T")[0]);
   const [chunk, setChunk] = useState("funnel");
 
   const range = useCallback(() => {
@@ -80,6 +89,7 @@ export function SalesDashboard() {
       const d = await res.json();
       if (d.error) throw new Error(d.error);
       setM(d);
+      onMetricsLoaded?.(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -110,19 +120,19 @@ export function SalesDashboard() {
         </div>
       ) : (
         <div>
-          <Sec id="funnel"      n="01" label="Sales Funnel"          active={chunk === "funnel"}      onClick={() => setChunk("funnel")}      loading={loading}>{m && <Funnel m={m} />}</Sec>
+          <Sec id="funnel"      n="01" label="Sales Funnel"          active={chunk === "funnel"}      onClick={() => { setChunk("funnel"); onSectionFocus?.("funnel", m); }}           loading={loading}>{m && <Funnel m={m} />}</Sec>
           <D label="Live Pipeline" />
-          <Sec id="pipeline"    n="02" label="Pipeline Snapshot"     active={chunk === "pipeline"}    onClick={() => setChunk("pipeline")}    loading={loading}>{m && <Pipeline m={m} />}</Sec>
+          <Sec id="pipeline"    n="02" label="Pipeline Snapshot"     active={chunk === "pipeline"}    onClick={() => { setChunk("pipeline"); onSectionFocus?.("pipeline", m); }}       loading={loading}>{m && <Pipeline m={m} />}</Sec>
           <D label="Outreach & Engagement" />
-          <Sec id="outreach"    n="03" label="Outreach Activity"     active={chunk === "outreach"}    onClick={() => setChunk("outreach")}    loading={loading}>{m && <Outreach m={m} />}</Sec>
+          <Sec id="outreach"    n="03" label="Outreach Activity"     active={chunk === "outreach"}    onClick={() => { setChunk("outreach"); onSectionFocus?.("outreach", m); }}       loading={loading}>{m && <Outreach m={m} />}</Sec>
           <D label="Efficiency Metrics" />
-          <Sec id="efficiency"  n="04" label="Activity to Convert"   active={chunk === "efficiency"}  onClick={() => setChunk("efficiency")}  loading={loading}>{m && <Efficiency m={m} />}</Sec>
+          <Sec id="efficiency"  n="04" label="Activity to Convert"   active={chunk === "efficiency"}  onClick={() => { setChunk("efficiency"); onSectionFocus?.("efficiency", m); }}   loading={loading}>{m && <Efficiency m={m} />}</Sec>
           <D label="Drop-off Intelligence" />
-          <Sec id="abandonment" n="05" label="Why Leads Drop Off"    active={chunk === "abandonment"} onClick={() => setChunk("abandonment")} loading={loading}>{m && <Abandonment m={m} />}</Sec>
+          <Sec id="abandonment" n="05" label="Why Leads Drop Off"    active={chunk === "abandonment"} onClick={() => { setChunk("abandonment"); onSectionFocus?.("abandonment", m); }} loading={loading}>{m && <Abandonment m={m} />}</Sec>
           <D label="Offer Management" />
-          <Sec id="offers"      n="06" label="Special Offers"        active={chunk === "offers"}      onClick={() => setChunk("offers")}      loading={loading}>{m && <Offers m={m} />}</Sec>
+          <Sec id="offers"      n="06" label="Special Offers"        active={chunk === "offers"}      onClick={() => { setChunk("offers"); onSectionFocus?.("offers", m); }}           loading={loading}>{m && <Offers m={m} />}</Sec>
           <D label="JARVIS Analysis" />
-          <Sec id="query"       n="07" label="Ask JARVIS"            active={chunk === "query"}       onClick={() => setChunk("query")}       loading={false}>{m && <Query m={m} />}</Sec>
+          <Sec id="query"       n="07" label="Ask JARVIS"            active={chunk === "query"}       onClick={() => { setChunk("query"); onSectionFocus?.("query", m); }}             loading={false}>{m && <Query m={m} externalAnswer={externalAnswer} />}</Sec>
         </div>
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -403,7 +413,7 @@ function Offers({ m }: { m: M }) {
 }
 
 // ── Section 07: JARVIS Query ──
-function Query({ m }: { m: M }) {
+function Query({ m, externalAnswer }: { m: M; externalAnswer?: string | null }) {
   const [q, setQ] = useState("");
   const [ans, setAns] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -437,7 +447,11 @@ function Query({ m }: { m: M }) {
         <div style={{ width: 4, height: 4, borderRadius: "50%", background: S.green, animation: "pulse 2s ease infinite" }} />
         JARVIS — say your question or type below
       </div>
-      {(ans || auto) && <p style={{ fontSize: 12, color: ans ? S.text : S.textDim, lineHeight: 1.65, marginBottom: 12, fontWeight: 300 }}>{ans || auto}</p>}
+      {(externalAnswer || ans || auto) && (
+        <p style={{ fontSize: 12, color: externalAnswer ? S.text : ans ? S.text : S.textDim, lineHeight: 1.65, marginBottom: 12, fontWeight: 300 }}>
+          {externalAnswer || ans || auto}
+        </p>
+      )}
       <div style={{ display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
         <input
           value={q}

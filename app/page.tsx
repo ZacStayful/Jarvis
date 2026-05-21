@@ -29,6 +29,7 @@ import { LearningSystem, isEODCommand } from "@/components/learning/LearningSyst
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
 import { detectSalesCommand } from "@/lib/sales/commands";
+import { pick, SALES_OPEN, LOADING, SECTION_ACK, QUERY_START, FOLLOW_UP, SILENCE_PROMPT, SALES_CLOSE, PRIORITY_PREFIX } from "@/lib/sales/voice-phrases";
 import {
   isStopPhrase,
   isNoMorePhrase,
@@ -124,6 +125,32 @@ export default function JarvisPage() {
 
   // Sales Intelligence Dashboard (mounted inline inside the JARVIS shell)
   const [salesOpen, setSalesOpen] = useState(false);
+  const [salesMetrics, setSalesMetrics] = useState<any>(null);
+  const [salesAnswer, setSalesAnswer] = useState<string | null>(null);
+
+  // Sales voice system refs
+  const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingPhraseIndex = useRef(0);
+
+  const startLoadingMessages = useCallback(() => {
+    loadingPhraseIndex.current = 0;
+    let count = 0;
+    const fire = () => {
+      speak(pick(LOADING));
+      count++;
+      const next = count < 3 ? 3000 : 5000;
+      loadingIntervalRef.current = setTimeout(fire, next);
+    };
+    loadingIntervalRef.current = setTimeout(fire, 3000);
+  }, [speak]);
+
+  const stopLoadingMessages = useCallback(() => {
+    if (loadingIntervalRef.current) {
+      clearTimeout(loadingIntervalRef.current);
+      loadingIntervalRef.current = null;
+    }
+  }, []);
 
   // Centralised "switch view" helper — every nav intent must clear its
   // siblings first, otherwise the render precedence makes the first-opened
@@ -134,13 +161,64 @@ export default function JarvisPage() {
     setLucyOpen(false);
     setPortfolioOpen(false);
     setSalesOpen(false);
+    stopLoadingMessages();
+    setSalesMetrics(null);
+    setSalesAnswer(null);
     setNewsActiveCategory(undefined);
     setNewsCategoriesFilter(undefined);
     loadedArticlesRef.current = null;
     awaitingNewsCategoryRef.current = false;
     // learningOpen is an overlay — intentionally left alone so EOD can
     // layer over whatever's currently in the shell.
-  }, []);
+  }, [stopLoadingMessages]);
+
+  const handleSalesVoiceQuery = useCallback(async (text: string) => {
+    if (!salesMetrics) return;
+    stopSpeaking();
+    speak(pick(QUERY_START));
+    startLoadingMessages();
+    try {
+      const res = await fetch('/api/sales/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metrics: salesMetrics, question: text }),
+      });
+      const data = await res.json();
+      stopLoadingMessages();
+      if (data.summary) {
+        setSalesAnswer(data.summary);
+        if (!muted) {
+          speak(data.summary);
+          // After speaking, offer a follow-up
+          if (data.followUp) {
+            setTimeout(() => {
+              if (!muted) speak(pick(FOLLOW_UP));
+            }, data.summary.length * 60 + 2000);
+          }
+        }
+      }
+    } catch {
+      stopLoadingMessages();
+      speak("I encountered an error, sir. Please try again.");
+    }
+  }, [salesMetrics, muted, speak, stopSpeaking, startLoadingMessages, stopLoadingMessages]);
+
+  const handleSectionFocus = useCallback(async (sectionId: string, metrics: any) => {
+    stopSpeaking();
+    speak(pick(SECTION_ACK[sectionId] || SECTION_ACK.funnel));
+    // Generate proactive contextual observation
+    try {
+      const res = await fetch('/api/sales/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metrics, sectionId }),
+      });
+      const data = await res.json();
+      if (data.summary && !muted) {
+        setTimeout(() => speak(data.summary), 2500);
+      }
+    } catch {}
+  }, [muted, speak, stopSpeaking]);
 
   // Track which message ids have already been spoken
   const spokenIdsRef = useRef<Set<string>>(new Set());
@@ -208,6 +286,52 @@ export default function JarvisPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [stopSpeaking]);
+
+  // Sales: silence prompt every 30s of idle when dashboard is open
+  useEffect(() => {
+    if (!salesOpen) {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      return;
+    }
+    const reset = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        if (!isSpeaking && !muted) speak(pick(SILENCE_PROMPT));
+      }, 30000);
+    };
+    reset();
+    window.addEventListener('click', reset);
+    return () => {
+      window.removeEventListener('click', reset);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    };
+  }, [salesOpen, isSpeaking, muted, speak]);
+
+  // Sales: auto-briefing when dashboard opens AND metrics load
+  useEffect(() => {
+    if (!salesOpen || !salesMetrics || muted) return;
+    const timer = setTimeout(async () => {
+      stopLoadingMessages();
+      try {
+        // Check for priority alerts first
+        const urgentOffers = salesMetrics.offers?.expiringThisWeek > 0;
+        if (urgentOffers) {
+          speak(pick(PRIORITY_PREFIX) + " " + salesMetrics.offers.expiringThisWeek + " offer" + (salesMetrics.offers.expiringThisWeek > 1 ? "s" : "") + " expiring this week.");
+        }
+        const res = await fetch('/api/sales/summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metrics: salesMetrics }),
+        });
+        const data = await res.json();
+        if (data.summary) {
+          const delay = urgentOffers ? 4000 : 0;
+          setTimeout(() => { if (!muted) speak(data.summary); }, delay);
+        }
+      } catch {}
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [salesOpen, salesMetrics, muted, speak, stopLoadingMessages]);
 
   // Phase 8 — summarise session on tab close (best-effort, non-blocking)
   useEffect(() => {
@@ -415,10 +539,31 @@ export default function JarvisPage() {
   const applyNavIntents = (text: string) => {
     if (isEODCommand(text)) setLearningOpen(true);
 
+    // Sales view with voice acknowledgement
+    if (salesOpen && /\b(close|back|home|exit)\b/i.test(text)) {
+      stopSpeaking();
+      speak(pick(SALES_CLOSE));
+      clearAllViews();
+      return;
+    }
+
+    if (salesOpen && /\b(what.*focus|today|priorities|focus today)\b/i.test(text)) {
+      handleSalesVoiceQuery(text);
+      return;
+    }
+
+    if (salesOpen && !/\b(news|lucy|portfolio|leads|tasks|command|investments)\b/i.test(text)) {
+      handleSalesVoiceQuery(text);
+      return;
+    }
+
     const sales = detectSalesCommand(text);
     if (sales === 'navigate') {
       clearAllViews();
+      stopSpeaking();
+      speak(pick(SALES_OPEN));
       setSalesOpen(true);
+      startLoadingMessages();
       return;
     }
     const lucy = detectLucyCommand(text);
@@ -565,7 +710,14 @@ export default function JarvisPage() {
           </div>
         ) : salesOpen ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            <SalesDashboard />
+            <SalesDashboard
+              onMetricsLoaded={(metrics) => {
+                setSalesMetrics(metrics);
+                stopLoadingMessages();
+              }}
+              externalAnswer={salesAnswer}
+              onSectionFocus={handleSectionFocus}
+            />
           </div>
         ) : lucyOpen ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
