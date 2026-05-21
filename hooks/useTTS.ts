@@ -10,6 +10,10 @@ interface UseTTSReturn {
   speak: (text: string) => Promise<void>;
   stop: () => void;
   isSpeaking: boolean;
+  // The text currently being spoken (or last spoken if isSpeaking is
+  // false). Used by app/page.tsx's barge-in filter to discard partial
+  // transcripts that match JARVIS's own voice picked up via mic echo.
+  currentText: string;
   muted: boolean;
   setMuted: (muted: boolean) => void;
   toggleMuted: () => void;
@@ -20,6 +24,7 @@ const STORAGE_KEY = 'jarvis_tts_muted';
 export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
   const { onStart, onEnd, onError } = options;
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [currentText, setCurrentText] = useState<string>('');
   const [muted, setMutedState] = useState<boolean>(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -70,6 +75,8 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
 
       // Cancel anything in flight
       cleanup();
+
+      setCurrentText(text);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -134,5 +141,5 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
     return () => cleanup();
   }, [cleanup]);
 
-  return { speak, stop, isSpeaking, muted, setMuted, toggleMuted };
+  return { speak, stop, isSpeaking, currentText, muted, setMuted, toggleMuted };
 }

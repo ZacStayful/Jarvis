@@ -6,7 +6,7 @@
 // cross-story pattern panel. Designed for Stayful green #5d8156 dark aesthetic.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useIntelligence } from '@/hooks/useIntelligence';
 import type { NewsArticle, NewsPattern } from '@/hooks/useIntelligence';
 import {
@@ -441,18 +441,36 @@ function LoadingSkeleton({ progress }: { progress: string }) {
 
 interface NewsBriefingViewProps {
   autoFetch?: boolean;
+  onComplete?: (articles: NewsArticle[]) => void;
+  activeCategory?: string;
+  initialCategories?: string[];
 }
 
-export default function NewsBriefingView({ autoFetch = true }: NewsBriefingViewProps) {
+export default function NewsBriefingView({ autoFetch = true, onComplete, activeCategory: activeCategoryProp, initialCategories }: NewsBriefingViewProps) {
   const { news, fetchNewsBriefing, refreshNews } = useIntelligence();
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const wasLoadingRef = useRef(false);
 
-  // Auto-fetch on mount if enabled
+  // Sync external activeCategory prop into local state (voice "focus on AI")
+  useEffect(() => {
+    if (activeCategoryProp) setActiveCategory(activeCategoryProp);
+  }, [activeCategoryProp]);
+
+  // Auto-fetch on mount if enabled — narrowed by initialCategories when
+  // the user asked for a specific topic ("take me to AI news").
   useEffect(() => {
     if (autoFetch && !news.isLoading && news.articles.length === 0 && !news.error) {
-      fetchNewsBriefing();
+      fetchNewsBriefing(initialCategories);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fire onComplete on the loading-finished transition (once per refresh)
+  useEffect(() => {
+    if (wasLoadingRef.current && !news.isLoading && news.articles.length > 0) {
+      onComplete?.(news.articles);
+    }
+    wasLoadingRef.current = news.isLoading;
+  }, [news.isLoading, news.articles, onComplete]);
 
   // Filtered + sorted articles
   const filteredArticles = sortByPriority(

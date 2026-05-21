@@ -28,6 +28,17 @@ import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
+import { detectSalesCommand } from "@/lib/sales/commands";
+import {
+  isStopPhrase,
+  isNoMorePhrase,
+  detectCategoryFocus,
+  isNewsRequest,
+  isSummariseRequest,
+  categoryVoiceName,
+} from "@/lib/voice-news-intents";
+import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
+import { isLikelyEcho } from "@/lib/voice-echo-filter";
 import { LucyView } from "@/views/LucyView";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
 import { GlobalStyles } from "@/components/jarvis/GlobalStyles";
@@ -73,7 +84,7 @@ export default function JarvisPage() {
   // Phase 8's client-side ElevenLabs streaming is intentionally disabled
   // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
   // ElevenLabs env vars are added in Vercel.
-  const { speak, stop: stopSpeaking, isSpeaking, muted, toggleMuted } = useTTS();
+  const { speak, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
 
   // Phase 8 — load cross-session context block to inject into the system prompt
   const crossSession = useCrossSessionContext();
@@ -118,12 +129,34 @@ export default function JarvisPage() {
     setRoutedView(null);
     setLucyOpen(false);
     setPortfolioOpen(false);
+    setNewsActiveCategory(undefined);
+    setNewsCategoriesFilter(undefined);
+    loadedArticlesRef.current = null;
+    awaitingNewsCategoryRef.current = false;
     // learningOpen is an overlay — intentionally left alone so EOD can
     // layer over whatever's currently in the shell.
   }, []);
 
   // Track which message ids have already been spoken
   const spokenIdsRef = useRef<Set<string>>(new Set());
+
+  // When applyNavIntents speaks an ack, we suppress the next assistant
+  // message's auto-TTS so ack + Claude's chat reply don't overlap.
+  const skipNextAssistantSpeechRef = useRef(false);
+
+  // News-conversation state: cached articles + controlled UI filter.
+  // Populated when the briefing finishes loading (onComplete), used by
+  // handleNewsConversation to drive topic-focus and category filtering.
+  const loadedArticlesRef = useRef<unknown[] | null>(null);
+  const [newsActiveCategory, setNewsActiveCategory] = useState<string | undefined>(undefined);
+
+  // Category filter for the upstream /api/news fetch. When set, the
+  // briefing only loads that category instead of all 8 — much faster.
+  const [newsCategoriesFilter, setNewsCategoriesFilter] = useState<string[] | undefined>(undefined);
+
+  // True after "open news" with no category — next transcript is
+  // interpreted as a category selection.
+  const awaitingNewsCategoryRef = useRef(false);
 
   // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
   useEffect(() => {
@@ -137,6 +170,10 @@ export default function JarvisPage() {
       !spokenIdsRef.current.has(latest.id)
     ) {
       spokenIdsRef.current.add(latest.id);
+      if (skipNextAssistantSpeechRef.current) {
+        skipNextAssistantSpeechRef.current = false;
+        return;
+      }
       speak(latest.content);
     }
   }, [messages, muted, speak]);
@@ -193,9 +230,30 @@ export default function JarvisPage() {
 
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
+      // Echo filter ONLY runs while JARVIS is actively speaking. Once
+      // JARVIS has stopped, the user's response is the real signal —
+      // even if it shares words with the question JARVIS just asked
+      // (e.g., answering "political news" to "what type of news?").
+      // Without this gate, legitimate responses were being silently
+      // dropped because they contained category words JARVIS had just
+      // listed.
+      if (isSpeaking && isLikelyEcho(text, spokenText)) {
+        if (voiceAlwaysOn) {
+          setTimeout(() => {
+            startListening().catch(() => {});
+          }, 600);
+        }
+        return;
+      }
       stopSpeaking();
-      applyNavIntents(text);
-      sendMessage(text);
+      if (
+        !handlePresenceCheck(text) &&
+        !handleNewsRequest(text) &&
+        !handleNewsConversation(text)
+      ) {
+        applyNavIntents(text);
+        sendMessage(text);
+      }
       // Re-arm listening after the silence-triggered stop, if always-on
       if (voiceAlwaysOn) {
         setTimeout(() => {
@@ -205,6 +263,146 @@ export default function JarvisPage() {
     },
   });
 
+  // Barge-in: stop in-flight JARVIS speech the moment the recogniser
+  // detects the user has started talking. partialTranscript fires in
+  // real-time as the Web Speech API emits interim results — much
+  // earlier than onFinalTranscript (which waits 1.5s of silence).
+  //
+  // The echo filter compares the partial against the text JARVIS is
+  // currently speaking (exposed via useTTS.currentText). If the partial
+  // looks like our own voice picked up via the mic, we ignore it —
+  // otherwise JARVIS would self-interrupt the moment its own audio
+  // bled back through the speakers.
+  useEffect(() => {
+    if (!isSpeaking) return;
+    const partial = partialTranscript.trim();
+    if (partial.length === 0) return;
+    if (isLikelyEcho(partial, spokenText)) return;
+    stopSpeaking();
+  }, [partialTranscript, isSpeaking, stopSpeaking, spokenText]);
+
+  // Fetch a Claude-written voice summary of the briefing (or a category
+  // subset) and speak it. Used by the briefing's onComplete and by the
+  // news-conversation handler when the user asks to focus on a topic.
+  const fetchAndSpeakNewsSummary = useCallback(
+    async (articles: unknown[], category: string | null) => {
+      try {
+        const res = await fetch("/api/news/voice-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articles, category }),
+        });
+        if (!res.ok) return;
+        const { summary } = (await res.json()) as { summary: string };
+        if (summary && !muted) speak(summary);
+      } catch {
+        // best-effort — silent on failure
+      }
+    },
+    [muted, speak]
+  );
+
+  // Presence check — "are you there?", "Jarvis?", "can you hear me?".
+  // Local intercept so JARVIS replies instantly instead of waiting for
+  // a Claude round-trip. Returns true if handled.
+  const handlePresenceCheck = (text: string): boolean => {
+    if (!isPresenceCheck(text)) return false;
+    if (!muted) speak(presenceResponse());
+    return true;
+  };
+
+  // Intercept transcripts while the news briefing view is mounted.
+  // Handles stop/no-more interruptions during summary playback. Topic
+  // switching is handled by handleNewsRequest below (it re-fetches just
+  // the chosen category instead of filtering the loaded set).
+  const handleNewsConversation = (text: string): boolean => {
+    if (routedView !== "news-briefing") return false;
+
+    const lower = text.toLowerCase().trim();
+
+    // "nothing" / "no more" — close view, hand back to dashboard
+    if (isNoMorePhrase(lower)) {
+      clearAllViews();
+      if (!muted) speak("Awaiting further commands, sir.");
+      return true;
+    }
+
+    // "stop" / "wait" / "pause" — ack and wait for follow-up
+    if (isStopPhrase(lower)) {
+      if (!muted) speak("Stopped, sir. What else would you like to cover?");
+      return true;
+    }
+
+    return false;
+  };
+
+  // News request handler — runs BEFORE applyNavIntents so news intents
+  // are resolved locally (briefing opens instantly, only the requested
+  // category is fetched, no Claude round-trip needed for routing).
+  //
+  // Three trigger cases:
+  //   1. Explicit news intent + category in same utterance ("AI news",
+  //      "take me to political news") → open briefing filtered to it.
+  //   2. Explicit news intent without category ("open the briefing") →
+  //      ask "what type?" and arm awaitingNewsCategoryRef.
+  //   3. Awaiting-category mode and a category is named → load it.
+  //   4. Briefing already open + category named → switch and refetch.
+  const handleNewsRequest = (text: string): boolean => {
+    const lower = text.toLowerCase().trim();
+    const hasNewsIntent = isNewsRequest(lower);
+    const hasSummariseIntent = isSummariseRequest(lower);
+    const category = detectCategoryFocus(lower);
+    const briefingOpen = routedView === "news-briefing";
+    const awaiting = awaitingNewsCategoryRef.current;
+
+    // Clear awaiting state on ANY input so we don't get stuck in it
+    if (awaiting) awaitingNewsCategoryRef.current = false;
+
+    // SUMMARISE while briefing is already open — re-speak a summary of
+    // whatever's currently on screen instead of asking "what type?".
+    // If a *different* category is named, fall through to the switch
+    // branch below (which will refetch and onComplete will narrate it).
+    if (
+      briefingOpen &&
+      hasSummariseIntent &&
+      (!category || category === newsActiveCategory)
+    ) {
+      const articles = loadedArticlesRef.current;
+      if (articles && articles.length > 0) {
+        fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
+      } else if (!muted) {
+        speak("One moment, sir — still pulling the feeds.");
+      }
+      return true;
+    }
+
+    // Cases 1, 3, 4 — a category is named in a news context
+    if (category && (hasNewsIntent || awaiting || briefingOpen)) {
+      if (!briefingOpen) {
+        clearAllViews();
+      }
+      setNewsCategoriesFilter([category]);
+      setNewsActiveCategory(category);
+      setRoutedView("news-briefing");
+      if (!muted) speak(`Pulling up the latest ${categoryVoiceName(category)}, sir.`);
+      return true;
+    }
+
+    // Case 2 — news intent, no category → ask which one
+    if (hasNewsIntent) {
+      awaitingNewsCategoryRef.current = true;
+      if (!muted) {
+        speak(
+          "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?"
+        );
+      }
+      return true;
+    }
+
+    // Awaiting was true but user said something unrelated — fall through
+    return false;
+  };
+
   // Shared nav-intent handler used by both voice and text paths. Detect
   // every possible intent, clear competing views once, then set the winner.
   // Priority: portfolio > lucy > clientside route. EOD is an overlay and
@@ -212,6 +410,11 @@ export default function JarvisPage() {
   const applyNavIntents = (text: string) => {
     if (isEODCommand(text)) setLearningOpen(true);
 
+    const sales = detectSalesCommand(text);
+    if (sales === 'navigate') {
+      router.push('/sales');
+      return;
+    }
     const lucy = detectLucyCommand(text);
     const portfolio = detectPortfolioCommand(text);
     const route = routeCommand(text);
@@ -219,9 +422,41 @@ export default function JarvisPage() {
     if (!lucy && !portfolio && !route) return;
 
     clearAllViews();
-    if (portfolio) setPortfolioOpen(true);
-    else if (lucy) setLucyOpen(true);
-    else if (route) setActiveView(route);
+
+    let ack: string | null = null;
+    if (portfolio) {
+      setPortfolioOpen(true);
+      ack = "Opening portfolio dashboard, sir.";
+    } else if (lucy) {
+      setLucyOpen(true);
+      ack = "Opening Lucy intelligence centre.";
+    } else if (route) {
+      setActiveView(route);
+      const lower = text.toLowerCase();
+      // News is handled by handleNewsRequest BEFORE this runs — skip it here
+      if (route === "news") {
+        // shouldn't happen in practice, but be safe
+      } else if (lower.includes("invest") || lower.includes("stock")) {
+        ack = "Opening investment dashboard.";
+      } else if (lower.includes("task") || lower.includes("todo")) {
+        ack = "Opening task centre.";
+      } else if (
+        lower.includes("lead") ||
+        lower.includes("pipeline") ||
+        lower.includes("sales")
+      ) {
+        ack = "Opening lead pipeline.";
+      } else if (lower.includes("command") || lower.includes("overview")) {
+        ack = "Opening command centre.";
+      }
+    }
+
+    // Suppress the next assistant auto-speech so the ack + (briefing summary)
+    // don't overlap with Claude's chat reply.
+    if (ack && !muted) {
+      skipNextAssistantSpeechRef.current = true;
+      speak(ack);
+    }
   };
 
   // Combined visual state
@@ -261,6 +496,9 @@ export default function JarvisPage() {
     if (!txt || isLoading) return;
     setInput("");
     stopSpeaking();
+    if (handlePresenceCheck(txt)) return;
+    if (handleNewsRequest(txt)) return;
+    if (handleNewsConversation(txt)) return;
     applyNavIntents(txt);
     sendMessage(txt);
   };
@@ -325,7 +563,17 @@ export default function JarvisPage() {
           </div>
         ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            <NewsBriefingView autoFetch />
+            <NewsBriefingView
+              key={newsCategoriesFilter?.join(",") ?? "all"}
+              autoFetch
+              initialCategories={newsCategoriesFilter}
+              activeCategory={newsActiveCategory}
+              onComplete={(articles) => {
+                loadedArticlesRef.current = articles;
+                if (articles.length === 0) return;
+                fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
+              }}
+            />
           </div>
         ) : routedView === "investment-dashboard" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
