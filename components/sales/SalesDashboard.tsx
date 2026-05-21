@@ -132,15 +132,18 @@ export function SalesDashboard() {
 
   const voice = useVoiceInput({ onFinalTranscript: handleVoiceTranscript });
   const voiceMountedRef = useRef(false);
+  const [voiceUserError, setVoiceUserError] = useState<string | null>(null);
 
-  // Wait ~100ms after mount before starting recogniser so the home-page
-  // listener tears down cleanly during route transition.
+  // Try auto-start after a short grace so the home-page listener tears
+  // down cleanly. If the browser blocks auto-start (no prior user
+  // gesture, or mic permission denied), the user can click the voice
+  // pill to retry — that gesture unblocks getUserMedia.
   useEffect(() => {
     if (voiceMountedRef.current) return;
     voiceMountedRef.current = true;
     const t = setTimeout(() => {
-      voice.startListening().catch(() => {
-        // Mic permission denied or not supported; voice is optional.
+      voice.startListening().catch((err) => {
+        setVoiceUserError(typeof err === "string" ? err : "Click to enable");
       });
     }, 120);
     return () => {
@@ -149,6 +152,20 @@ export function SalesDashboard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const toggleVoice = useCallback(() => {
+    if (voice.isListening) {
+      voice.stopListening();
+      setVoiceUserError("Click to enable");
+    } else {
+      setVoiceUserError(null);
+      voice.startListening().catch((err) => {
+        setVoiceUserError(
+          typeof err === "string" ? err : "Mic permission denied",
+        );
+      });
+    }
+  }, [voice]);
 
   const pipelineStatus: ChunkStatus = pipeline.loading
     ? "loading"
@@ -174,11 +191,13 @@ export function SalesDashboard() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        position: "fixed",
+        inset: 0,
         background: S.bg,
         color: S.text,
         fontFamily: "Rajdhani, sans-serif",
         overflowY: "auto",
+        overflowX: "hidden",
       }}
     >
       {/* Header */}
@@ -392,6 +411,8 @@ export function SalesDashboard() {
         partial={voice.partialTranscript}
         muted={tts.muted}
         speaking={tts.isSpeaking}
+        errorMessage={voiceUserError}
+        onClick={toggleVoice}
       />
 
       <style>{`
@@ -408,21 +429,39 @@ function VoiceOverlay({
   partial,
   muted,
   speaking,
+  errorMessage,
+  onClick,
 }: {
   listening: boolean;
   partial: string;
   muted: boolean;
   speaking: boolean;
+  errorMessage: string | null;
+  onClick: () => void;
 }) {
+  const label = speaking
+    ? "SPEAKING"
+    : partial
+      ? partial.slice(0, 40).toUpperCase()
+      : listening
+        ? muted
+          ? "LISTENING · MUTED"
+          : 'SAY "FOCUS ON…", "SUMMARISE", "CLOSE SALES"'
+        : errorMessage
+          ? `VOICE OFF — ${errorMessage.toUpperCase()}`
+          : "CLICK TO ENABLE VOICE";
+
   return (
-    <div
+    <button
+      onClick={onClick}
+      type="button"
       style={{
         position: "fixed",
         bottom: 18,
         left: "50%",
         transform: "translateX(-50%)",
         background: "rgba(13, 20, 13, 0.92)",
-        border: `1px solid ${S.border}`,
+        border: `1px solid ${listening ? S.borderHi : S.border}`,
         borderRadius: 999,
         padding: "8px 16px",
         display: "flex",
@@ -431,7 +470,10 @@ function VoiceOverlay({
         backdropFilter: "blur(12px)",
         zIndex: 50,
         maxWidth: "80vw",
+        cursor: "pointer",
+        color: "inherit",
       }}
+      aria-label={listening ? "Stop voice" : "Enable voice"}
     >
       <div
         style={{
@@ -448,19 +490,11 @@ function VoiceOverlay({
         style={{
           fontSize: 9,
           letterSpacing: "0.12em",
-          color: S.textDim,
+          color: listening ? S.greenHi : S.textDim,
         }}
       >
-        {speaking
-          ? "SPEAKING"
-          : partial
-            ? partial.slice(0, 40).toUpperCase()
-            : listening
-              ? muted
-                ? "LISTENING · MUTED"
-                : 'SAY "FOCUS ON…", "SUMMARISE", "CLOSE SALES"'
-              : "VOICE OFFLINE"}
+        {label}
       </span>
-    </div>
+    </button>
   );
 }

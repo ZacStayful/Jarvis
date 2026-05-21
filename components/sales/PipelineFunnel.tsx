@@ -139,10 +139,15 @@ function AISummaryCard({ range }: { range: DateRange }) {
     if (range.from) params.set("from", range.from);
     if (range.to) params.set("to", range.to);
     fetch(`/api/sales/summary?${params}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok || body.error) {
+          throw new Error(body.error || `HTTP ${r.status}`);
+        }
+        return body;
+      })
       .then((data) => {
         if (cancelled) return;
-        if (data.error) throw new Error(data.error);
         setSummary(data.summary || data.text || null);
       })
       .catch((err) => {
@@ -208,8 +213,12 @@ function AISummaryCard({ range }: { range: DateRange }) {
         </div>
       )}
       {error && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: S.textMuted, lineHeight: 1.5 }}>
-          Summary unavailable — say &quot;summarise&quot; to retry.
+        <div
+          className="mono"
+          style={{ fontSize: 11, color: S.textMuted, lineHeight: 1.5 }}
+        >
+          Summary unavailable — {error}. Say &quot;summarise&quot; or refresh
+          to retry.
         </div>
       )}
       {summary && !loading && (
