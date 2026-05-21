@@ -1,0 +1,17 @@
+export const S = {
+  bg: "#080c09",
+  surface: "#0e1410",
+  surface2: "#131a14",
+  border: "rgba(93,129,86,0.15)",
+  borderHi: "rgba(93,129,86,0.4)",
+  green: "#5d8156",
+  greenDim: "#3d5738",
+  greenHi: "#7aa872",
+  greenPale: "rgba(93,129,86,0.08)",
+  amber: "#c8922a",
+  red: "#9b3a3a",
+  blue: "#3a6b9b",
+  text: "#e8ede7",
+  textDim: "#7a8f79",
+  textMuted: "#3d4e3c",
+} as const;
