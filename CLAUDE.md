@@ -120,6 +120,23 @@ this** — Claude never replies, so nothing to muzzle.
 
 ---
 
+## Barge-in (interrupt JARVIS by speaking)
+
+A `useEffect` in `app/page.tsx` watches `useVoiceInput.partialTranscript`
+and calls `stopSpeaking()` whenever it becomes non-empty while
+`isSpeaking` is true. This gives true conversational interrupt —
+JARVIS halts the moment the recogniser detects you've started
+talking, not after you finish a sentence.
+
+Don't replace this with a `onFinalTranscript`-based stop: that fires
+only after 1.5s of trailing silence, which is too late for natural
+turn-taking. Echo from speaker → mic can occasionally produce a
+spurious partial during JARVIS playback; if this becomes a problem,
+add a minimum-length threshold (≥3 chars) or a 300ms grace window
+after `speak()` starts before honouring partials.
+
+---
+
 ## `useTTS.onEnd` is the only real "audio played" signal
 
 `speak()` resolves whether or not `audio.play()` actually played.

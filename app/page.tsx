@@ -246,6 +246,18 @@ export default function JarvisPage() {
     },
   });
 
+  // Barge-in: stop in-flight JARVIS speech the moment the recogniser
+  // detects the user has started talking. partialTranscript fires in
+  // real-time as the Web Speech API emits interim results — much
+  // earlier than onFinalTranscript (which waits 1.5s of silence).
+  // Without this, you'd have to finish your sentence before JARVIS
+  // would stop, which isn't how a real conversation works.
+  useEffect(() => {
+    if (isSpeaking && partialTranscript.trim().length > 0) {
+      stopSpeaking();
+    }
+  }, [partialTranscript, isSpeaking, stopSpeaking]);
+
   // Fetch a Claude-written voice summary of the briefing (or a category
   // subset) and speak it. Used by the briefing's onComplete and by the
   // news-conversation handler when the user asks to focus on a topic.
