@@ -1,0 +1,13 @@
+{
+  "boardId": "18414226069",
+  "columns": {
+    "leadName": "text_mm3j7z80",
+    "leadId": "numeric_mm3j8j6h",
+    "eventType": "dropdown_mm3jq119",
+    "from": "text_mm3j2tdt",
+    "to": "text_mm3jrxk9",
+    "timestamp": "date_mm3j7b8n",
+    "source": "dropdown_mm3jrcq9",
+    "notes": "long_text_mm3jh46"
+  }
+}
