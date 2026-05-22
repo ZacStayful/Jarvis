@@ -71,3 +71,17 @@ export function appendMessage(
 export function serializeConversation(state: ConversationState): string {
   return JSON.stringify(state)
 }
+
+// Returns the content of the most recent inbound message in the
+// conversation, or null if the lead has never replied. Used by
+// re-engagement templates to pick up the thread naturally.
+export function getLastInboundMessage(state: ConversationState): string | null {
+  if (!state?.messages?.length) return null
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const m = state.messages[i]
+    if (m?.role === 'inbound' && typeof m.content === 'string') {
+      return m.content
+    }
+  }
+  return null
+}

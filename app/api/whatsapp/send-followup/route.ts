@@ -178,11 +178,15 @@ export async function POST(req: NextRequest) {
   }
   const leadId = body?.leadId ? String(body.leadId) : ''
   const step = body?.step
+  const mode = body?.mode ?? 'cold'
   if (!leadId) {
     return NextResponse.json({ success: false, error: 'missing_leadId' }, { status: 400 })
   }
-  if (step !== 1 && step !== 2 && step !== 3) {
-    return NextResponse.json({ success: false, error: 'invalid_step' }, { status: 400 })
+  if (step !== 1 && step !== 2 && step !== 3 && step !== 4) {
+    return NextResponse.json({ error: 'invalid_params' }, { status: 400 })
+  }
+  if (mode !== 'cold' && mode !== 'reengagement') {
+    return NextResponse.json({ error: 'invalid_params' }, { status: 400 })
   }
 
   try {
@@ -191,9 +195,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'lead_not_found' }, { status: 404 })
     }
 
-    // Guard: conversation is active or in a terminal state — skip.
-    const blockingStatuses = new Set(['Replied', 'Booked', 'Abandoned'])
-    if (blockingStatuses.has(lead.waStatus)) {
+    // Guard: terminal / success states — never send a follow-up to these.
+    // For cold mode, "Replied" is also blocking (lead is actively in
+    // conversation). For reengagement mode, "Replied" is the expected
+    // state — that's the whole point of re-engagement, picking back up
+    // after the lead replied then went silent.
+    if (lead.waStatus === 'Booked' || lead.waStatus === 'Abandoned') {
+      return NextResponse.json(
+        { skipped: true, reason: 'conversation_active' },
+        { status: 200 },
+      )
+    }
+    if (mode === 'cold' && lead.waStatus === 'Replied') {
       return NextResponse.json(
         { skipped: true, reason: 'conversation_active' },
         { status: 200 },
@@ -208,6 +221,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'no_phone' }, { status: 400 })
     }
 
+    // Parse conversation up-front so templates can use it (re-engagement
+    // mode references the last inbound message).
+    const conversation = parseConversation(lead.conversationRaw)
+    if (!conversation.leadId) conversation.leadId = leadId
+
     const profile: LeadProfile = {
       name: lead.name,
       address: lead.address,
@@ -220,7 +238,12 @@ export async function POST(req: NextRequest) {
       profileType: lead.profileType,
       bestOpeningMessage: null,
     }
-    const message = getFollowUpTemplate(step as 1 | 2 | 3, profile)
+    const message = getFollowUpTemplate(
+      step as 1 | 2 | 3 | 4,
+      profile,
+      mode as 'cold' | 'reengagement',
+      conversation,
+    )
 
     const sendResult = await sendTwilio(phone, message)
     if ('error' in sendResult) {
@@ -231,8 +254,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Append to conversation, bump messages-sent count.
-    const conversation = parseConversation(lead.conversationRaw)
-    if (!conversation.leadId) conversation.leadId = leadId
     const updatedConversation = appendMessage(
       { ...conversation, currentStep: step as number },
       'outbound',
@@ -243,9 +264,13 @@ export async function POST(req: NextRequest) {
       [COL.waMessagesSent]: (lead.waMessagesSent || 0) + 1,
       [COL.waConversation]: serializeConversation(updatedConversation),
     }
-    if (step === 3) {
+    if (step === 4) {
       updates[COL.waCompleted] = { checked: 'true' }
-      updates[COL.waStatus] = { label: 'No Response' }
+      // cold sequence exhausted → No Response. Re-engagement exhausted →
+      // Abandoned (lead engaged once then went permanently quiet).
+      updates[COL.waStatus] = {
+        label: mode === 'reengagement' ? 'Abandoned' : 'No Response',
+      }
     }
 
     const columnValuesJSON = JSON.stringify(updates)
@@ -276,7 +301,7 @@ export async function POST(req: NextRequest) {
       leadName: lead.name,
       eventType: 'WhatsApp Sent',
       source: 'Vercel',
-      notes: `follow-up step ${step}`,
+      notes: `follow-up step ${step} (${mode})`,
     })
 
     return NextResponse.json({ success: true, step, messageSid: sendResult.messageSid })

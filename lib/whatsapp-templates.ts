@@ -11,6 +11,14 @@
 //
 // SMS is plain text only — no markdown, no bold, no bullets, no emoji.
 // Keep messages short; each SMS segment is ~160 GSM-7 chars.
+//
+// Follow-ups are mode-aware:
+//   cold         — lead has never replied; rotate angle across steps.
+//   reengagement — lead replied then went silent; reference the
+//                  conversation history naturally.
+
+import type { ConversationState } from './whatsapp-conversation'
+import { getLastInboundMessage } from './whatsapp-conversation'
 
 export interface LeadProfile {
   name: string
@@ -132,24 +140,139 @@ export function getInitialTemplate(lead: LeadProfile): string {
   return pathB(lead)
 }
 
-export function getFollowUpTemplate(step: 1 | 2 | 3, lead: LeadProfile): string {
+// ── Cold-mode helpers ────────────────────────────────────────────────────────
+
+// Current season — used by cold step 2 to anchor a timing message.
+function currentSeason(now: Date = new Date()): string {
+  const m = now.getMonth() // 0-11
+  if (m >= 2 && m <= 4) return 'spring'
+  if (m >= 5 && m <= 7) return 'summer'
+  if (m >= 8 && m <= 9) return 'autumn'
+  return 'the festive run'
+}
+
+// Did the initial outreach use the figure-led PATH_A variant? The first
+// outbound message in the conversation tells us — if it includes a £
+// figure, PATH_A. Used so cold step 1 picks a different angle from the
+// opener.
+function initialUsedFigures(conversation: ConversationState): boolean {
+  const first = conversation?.messages?.find((m) => m.role === 'outbound')
+  return !!first && /£\s*\d/.test(first.content)
+}
+
+// ── Re-engagement helpers ────────────────────────────────────────────────────
+
+// Pick a coarse topic label from the lead's last inbound message so a
+// re-engagement open can reference it without quoting verbatim. Keeps
+// the tone natural rather than surveillance-y.
+function topicFromInbound(text: string | null): string {
+  if (!text) return 'what we were chatting about'
+  const t = text.toLowerCase()
+  if (/\b(fee|cost|%|price|expensive|charge)/.test(t)) return 'the fee side'
+  if (/\b(tenant|long.?let|ast|sitting tenant)/.test(t)) return 'your current tenancy'
+  if (/\b(hassle|hands.?on|time|day.to.?day|manage|effort)/.test(t)) return 'the day-to-day side'
+  if (/\b(law|regulation|licen[cs]e|stl|article 4)/.test(t)) return 'the regulation side'
+  if (/\b(income|money|rent|yield|return|earn|net)/.test(t)) return 'the income picture'
+  if (/\b(area|location|local|market)/.test(t)) return 'how the area performs'
+  return 'what we were chatting about'
+}
+
+function conversationHadObjection(conversation: ConversationState): boolean {
+  return (
+    conversation?.messages?.some(
+      (m) => m.role === 'inbound' && m.intent === 'objection',
+    ) ?? false
+  )
+}
+
+// ── Cold templates ───────────────────────────────────────────────────────────
+
+function coldFollowUp(
+  step: 1 | 2 | 3 | 4,
+  lead: LeadProfile,
+  conversation: ConversationState,
+): string {
   const fn = firstName(lead.name)
   const addr = shortAddress(lead.address)
-  const hasNumbers = lead.strNetMonthly !== null
 
   if (step === 1) {
-    // Day+1: light touch. Assume they just missed it.
-    return `Hey ${fn}, wanted to check this didn't get lost in your messages. Happy to send over the figures on ${addr} whenever's good.`
+    // Different angle from the initial message. If the opener led with
+    // figures, ask about their situation. If it led with the concept,
+    // anchor on what other owners locally are doing.
+    if (initialUsedFigures(conversation)) {
+      return `Hi ${fn}, didn't want to lead with the numbers again. What's the picture with ${addr} at the moment — let, sitting empty, or somewhere in between?`
+    }
+    return `Hi ${fn}, slightly different angle — we've got a handful of owners around ${addr} moving across from standard lets to short-stay at the moment. Curious where you've landed on it.`
   }
 
   if (step === 2) {
-    // Day+3: lean on the opportunity. One specific anchor.
-    if (hasNumbers && lead.monthlySurplus && lead.monthlySurplus > 0) {
-      return `Hi ${fn} — circling back on ${addr}. The short-stay net was coming in about ${gbp(lead.monthlySurplus)} a month ahead of a standard let in our analyser. Worth me sending the full breakdown?`
-    }
-    return `Hi ${fn} — circling back on ${addr}. The short-stay net tends to come in materially ahead of a standard tenancy for properties in your area. Worth me sending the full breakdown?`
+    // Timing / urgency. Short. One question.
+    const season = currentSeason()
+    return `Hi ${fn}, ${season} demand for short-stays is climbing — usually when owners take a proper look at this. Worth a quick chat on ${addr}?`
   }
 
-  // step === 3 — Day+7: clear close or graceful exit.
-  return `Hi ${fn}, last note from me on this. If short-stay management of ${addr} isn't a fit right now, no problem — I'll close it off here. If you'd rather see the figures first, just say the word.`
+  if (step === 3) {
+    // Soft close — no question, address referenced, easy to come back to.
+    return `Totally get if the timing's off, ${fn}. If short-stay on ${addr} becomes worth a look later in the year, my number's here.`
+  }
+
+  // step === 4 — door stays open. Shouldn't be reached in normal flow but
+  // safe to call. No question, no pressure.
+  return `No pressure either way, ${fn} — door's open on ${addr} whenever it suits.`
+}
+
+// ── Re-engagement templates ──────────────────────────────────────────────────
+
+function reengagementFollowUp(
+  step: 1 | 2 | 3 | 4,
+  lead: LeadProfile,
+  conversation: ConversationState,
+): string {
+  const fn = firstName(lead.name)
+  const addr = shortAddress(lead.address)
+  const lastInbound = getLastInboundMessage(conversation)
+  const topic = topicFromInbound(lastInbound)
+
+  if (step === 1) {
+    // Pick up from their last message. Reference the topic naturally,
+    // one warm continuation question.
+    return `Hi ${fn} — following up on what you mentioned about ${topic}. Where did you land on ${addr} in the end?`
+  }
+
+  if (step === 2) {
+    // Different angle. If they raised an objection earlier, apply
+    // VALIDATE → REFRAME. Otherwise try proof / local examples.
+    if (conversationHadObjection(conversation)) {
+      return `Fair concern, ${fn} — most owners flag the same before they see how it plays out. The bit that usually surprises people is how predictable the net comes in once the calendar's working. Worth 15 mins to walk through it on ${addr}?`
+    }
+    return `Hi ${fn}, different angle — we've had a couple of owners near ${addr} switch across recently and the numbers came in ahead of forecast. Want me to send over the comparison?`
+  }
+
+  if (step === 3) {
+    // Short and direct. Address + one data point. Single question.
+    if (lead.strNetMonthly && lead.strNetMonthly > 0) {
+      return `${fn} — on ${addr}, short-stay net was modelling around ${gbp(lead.strNetMonthly)} a month. Worth a quick call to walk through it?`
+    }
+    if (lead.estimatedRent && lead.estimatedRent > 0) {
+      return `${fn} — on ${addr}, the model puts gross short-stay around ${gbp(lead.estimatedRent)} a month. Quick call to walk through the net?`
+    }
+    return `${fn} — on ${addr}, the short-stay net tends to land materially ahead of a standard let. Quick call to walk through the figures?`
+  }
+
+  // step === 4 — final, warm, permanent door-open. No question, no pressure.
+  return `Last note from me on ${addr}, ${fn} — no pressure either way. If short-stay ever becomes worth another look, my line's open whenever.`
+}
+
+// ── Public follow-up entry point ─────────────────────────────────────────────
+
+export function getFollowUpTemplate(
+  step: 1 | 2 | 3 | 4,
+  lead: LeadProfile,
+  mode: 'cold' | 'reengagement',
+  conversation: ConversationState,
+): string {
+  if (mode === 'reengagement') {
+    return reengagementFollowUp(step, lead, conversation)
+  }
+  return coldFollowUp(step, lead, conversation)
 }
