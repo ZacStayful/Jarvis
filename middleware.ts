@@ -8,6 +8,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow WhatsApp webhook routes — Twilio must hit these unauthenticated.
+  if (pathname.startsWith("/api/whatsapp")) {
+    return NextResponse.next();
+  }
+
   // Allow Next.js internals
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
