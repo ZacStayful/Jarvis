@@ -13,6 +13,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow Calendly webhook routes — Calendly must hit these unauthenticated.
+  if (pathname.startsWith("/api/calendly")) {
+    return NextResponse.next();
+  }
+
   // Allow Next.js internals
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
