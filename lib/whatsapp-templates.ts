@@ -3,45 +3,46 @@
 // historical — the engine was originally built for WhatsApp and the
 // routes still live under /api/whatsapp/.)
 //
-// Tone follows the Stayful lead-intelligence framework:
-// VALIDATE → REFRAME → QUANTIFY → PROOF → QUESTION. Outreach is
-// property-owner-to-property-owner, direct, never pushy, never AI.
-// First message never includes the Calendly link — that's earned by
-// a reply.
-//
-// SMS is plain text only — no markdown, no bold, no bullets, no emoji.
-// Keep messages short; each SMS segment is ~160 GSM-7 chars.
-//
-// Follow-ups are mode-aware:
-//   cold         — lead has never replied; rotate angle across steps.
-//   reengagement — lead replied then went silent; reference the
-//                  conversation history naturally.
+// Voice: Zac from Stayful, UK property owner to UK property owner.
+// Specific over generic. One question per message. Name on first
+// contact only, at the start, never repeated and never at the end.
+// SMS is plain text — no markdown, no bullets, no emoji. Read every
+// message aloud — if it sounds like a robot wrote it, rewrite it.
 
 import type { ConversationState } from './whatsapp-conversation'
 import { getLastInboundMessage } from './whatsapp-conversation'
 
 export interface LeadProfile {
   name: string
+  firstName: string
   address: string
+  bedrooms: string
+  leadProfile: string
   estimatedRent: number | null
   strNetMonthly: number | null
   longLetNetMonthly: number | null
   monthlySurplus: number | null
-  profileType: string
   bestOpeningMessage: string | null
 }
 
-function firstName(name: string): string {
-  const trimmed = (name || '').trim()
-  if (!trimmed) return 'there'
-  return trimmed.split(/\s+/)[0]
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Extract first name — everything before the first space. Hyphenated
+// first names like "Sarah-Jane" stay intact. Single-word names returned
+// as-is. Returns the original string if extraction would yield empty.
+export function extractFirstName(fullName: string): string {
+  const trimmed = (fullName || '').trim()
+  if (!trimmed) return ''
+  const first = trimmed.split(/\s+/)[0]?.trim()
+  return first || trimmed
 }
 
+// Short address — first comma-separated chunk. Use for follow-up
+// references where the full postcode would feel heavy mid-sentence.
 function shortAddress(address: string): string {
   const trimmed = (address || '').trim()
-  if (!trimmed) return 'your property'
-  // Use the first comma-separated chunk if available — keeps the message tight.
-  const first = trimmed.split(',')[0].trim()
+  if (!trimmed) return ''
+  const first = trimmed.split(',')[0]?.trim()
   return first || trimmed
 }
 
@@ -49,132 +50,38 @@ function gbp(n: number): string {
   return `£${Math.round(n).toLocaleString('en-GB')}`
 }
 
-// PATH A — we have Deal Analyser numbers. Lead with the specific surplus
-// figure — that's the strongest reframe we have.
-function pathA(lead: LeadProfile): string {
-  const fn = firstName(lead.name)
-  const addr = shortAddress(lead.address)
-  const surplus = lead.monthlySurplus
-  const strNet = lead.strNetMonthly
-  const longNet = lead.longLetNetMonthly
-
-  // QUANTIFY block — phrase varies depending on which figures we have.
-  let quantify = ''
-  if (surplus && surplus > 0) {
-    quantify = `Based on our analyser, running ${addr} as a short-stay let looks roughly ${gbp(surplus)} per month ahead of a standard long-let after costs.`
-  } else if (strNet && longNet) {
-    const diff = strNet - longNet
-    if (diff > 0) {
-      quantify = `Based on our analyser, ${addr} comes out around ${gbp(diff)} per month ahead as a short-stay let vs a standard tenancy, net of costs.`
-    } else {
-      quantify = `Based on our analyser, ${addr} looks net ${gbp(strNet)} per month as a short-stay let after costs.`
-    }
-  } else if (strNet) {
-    quantify = `Based on our analyser, ${addr} looks net ${gbp(strNet)} per month as a short-stay let after costs.`
-  } else {
-    quantify = `We've run the numbers on ${addr} and the short-stay net looks materially ahead of a standard long-let.`
-  }
-
-  // Profile-aware reframe — small variations only. Keep it owner-to-owner.
-  const profile = (lead.profileType || '').toLowerCase()
-  let reframe: string
-  if (profile.includes('switch') || profile.includes('existing')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. I had a quick look at ${addr} on the assumption you might be open to a stronger return than a standard let is delivering.`
-  } else if (profile.includes('abroad')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK for owners who aren't on the ground day-to-day. Pulled the numbers on ${addr} to see whether it stacks up.`
-  } else if (profile.includes('sell') || profile.includes('special')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. I had a look at ${addr} before you make any decision on selling — the income picture changes the maths.`
-  } else if (profile.includes('purchase')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. Pulled the numbers on ${addr} so you've got a real income picture before you commit.`
-  } else {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. I pulled some numbers on ${addr} and the gap to a standard long-let was big enough to flag.`
-  }
-
-  const question = `Worth a quick look at the figures, ${fn}?`
-
-  return `Hi ${fn}, ${reframe} ${quantify} ${question}`
+function calendlyLink(): string {
+  return process.env.CALENDLY_LINK || 'https://calendly.com/stayful/web-meeting'
 }
 
-// PATH B — no analyser numbers. Lead with the concept and ask a single
-// open question. Shorter, lower-commitment.
-function pathB(lead: LeadProfile): string {
-  const fn = firstName(lead.name)
-  const addr = shortAddress(lead.address)
-
-  const profile = (lead.profileType || '').toLowerCase()
-  let reframe: string
-  if (profile.includes('switch') || profile.includes('existing')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. Saw ${addr} and wanted to flag that for owners already letting, the short-stay net often comes in materially ahead of a standard tenancy after costs.`
-  } else if (profile.includes('abroad')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK, fully hands-off for owners who aren't on the ground. Came across ${addr} and wanted to flag it.`
-  } else if (profile.includes('sell')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. Saw ${addr} and wanted to flag that short-stay income often shifts the maths on selling vs holding.`
-  } else if (profile.includes('purchase')) {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. Saw ${addr} and wanted to flag what the short-stay income picture tends to look like before you commit.`
-  } else {
-    reframe = `I run Stayful — we manage short-stay lets across the UK. Saw ${addr} and wanted to flag that owners typically clear more net per month from short-stay than a standard let, fully managed.`
-  }
-
-  const question = `Is ${addr} something you're letting currently, ${fn}?`
-
-  return `Hi ${fn}, ${reframe} ${question}`
-}
-
-export function getInitialTemplate(lead: LeadProfile): string {
-  // If learnings have surfaced a winning opening, use it as the structural
-  // basis but personalise with lead-specific data. Session 5 turns this on.
-  if (lead.bestOpeningMessage && lead.bestOpeningMessage.trim()) {
-    const fn = firstName(lead.name)
-    const addr = shortAddress(lead.address)
-    return lead.bestOpeningMessage
-      .replace(/\{name\}/gi, fn)
-      .replace(/\{firstName\}/gi, fn)
-      .replace(/\{address\}/gi, addr)
-      .replace(/\{surplus\}/gi, lead.monthlySurplus ? gbp(lead.monthlySurplus) : '')
-      .trim()
-  }
-
-  if (lead.strNetMonthly !== null) {
-    return pathA(lead)
-  }
-  return pathB(lead)
-}
-
-// ── Cold-mode helpers ────────────────────────────────────────────────────────
-
-// Current season — used by cold step 2 to anchor a timing message.
-function currentSeason(now: Date = new Date()): string {
-  const m = now.getMonth() // 0-11
-  if (m >= 2 && m <= 4) return 'spring'
-  if (m >= 5 && m <= 7) return 'summer'
-  if (m >= 8 && m <= 9) return 'autumn'
-  return 'the festive run'
-}
-
-// Did the initial outreach use the figure-led PATH_A variant? The first
-// outbound message in the conversation tells us — if it includes a £
-// figure, PATH_A. Used so cold step 1 picks a different angle from the
-// opener.
+// Heuristic: did the lead's initial outreach message reference a £
+// figure? Used to pick a different angle in the first cold follow-up.
 function initialUsedFigures(conversation: ConversationState): boolean {
   const first = conversation?.messages?.find((m) => m.role === 'outbound')
   return !!first && /£\s*\d/.test(first.content)
 }
 
-// ── Re-engagement helpers ────────────────────────────────────────────────────
+// Re-engagement helpers ──────────────────────────────────────────────────────
 
-// Pick a coarse topic label from the lead's last inbound message so a
-// re-engagement open can reference it without quoting verbatim. Keeps
-// the tone natural rather than surveillance-y.
-function topicFromInbound(text: string | null): string {
-  if (!text) return 'what we were chatting about'
+type InboundTopic =
+  | 'fees'
+  | 'tenancy'
+  | 'day-to-day'
+  | 'regulation'
+  | 'income'
+  | 'area'
+  | null
+
+function topicFromInbound(text: string | null): InboundTopic {
+  if (!text) return null
   const t = text.toLowerCase()
-  if (/\b(fee|cost|%|price|expensive|charge)/.test(t)) return 'the fee side'
-  if (/\b(tenant|long.?let|ast|sitting tenant)/.test(t)) return 'your current tenancy'
-  if (/\b(hassle|hands.?on|time|day.to.?day|manage|effort)/.test(t)) return 'the day-to-day side'
-  if (/\b(law|regulation|licen[cs]e|stl|article 4)/.test(t)) return 'the regulation side'
-  if (/\b(income|money|rent|yield|return|earn|net)/.test(t)) return 'the income picture'
-  if (/\b(area|location|local|market)/.test(t)) return 'how the area performs'
-  return 'what we were chatting about'
+  if (/\b(fee|cost|%|price|expensive|charge|commission)/.test(t)) return 'fees'
+  if (/\b(tenant|long.?let|ast|sitting tenant|tenancy)/.test(t)) return 'tenancy'
+  if (/\b(hassle|hands.?on|time|day.to.?day|manage|effort|involve)/.test(t)) return 'day-to-day'
+  if (/\b(law|regulation|licen[cs]e|stl|article 4|planning)/.test(t)) return 'regulation'
+  if (/\b(income|money|rent|yield|return|earn|net|profit|figures)/.test(t)) return 'income'
+  if (/\b(area|location|local|market|demand)/.test(t)) return 'area'
+  return null
 }
 
 function conversationHadObjection(conversation: ConversationState): boolean {
@@ -185,82 +92,209 @@ function conversationHadObjection(conversation: ConversationState): boolean {
   )
 }
 
-// ── Cold templates ───────────────────────────────────────────────────────────
+// ── Initial message ──────────────────────────────────────────────────────────
 
-function coldFollowUp(
-  step: 1 | 2 | 3 | 4,
-  lead: LeadProfile,
-  conversation: ConversationState,
-): string {
-  const fn = firstName(lead.name)
-  const addr = shortAddress(lead.address)
+// Each profile-specific builder returns line 2 + line 3. The greeting
+// line 1 is added by the public entrypoint so the "Hi X, it's Zac from
+// Stayful." opener is identical across profiles.
 
-  if (step === 1) {
-    // Different angle from the initial message. If the opener led with
-    // figures, ask about their situation. If it led with the concept,
-    // anchor on what other owners locally are doing.
-    if (initialUsedFigures(conversation)) {
-      return `Hi ${fn}, didn't want to lead with the numbers again. What's the picture with ${addr} at the moment — let, sitting empty, or somewhere in between?`
-    }
-    return `Hi ${fn}, slightly different angle — we've got a handful of owners around ${addr} moving across from standard lets to short-stay at the moment. Curious where you've landed on it.`
-  }
-
-  if (step === 2) {
-    // Timing / urgency. Short. One question.
-    const season = currentSeason()
-    return `Hi ${fn}, ${season} demand for short-stays is climbing — usually when owners take a proper look at this. Worth a quick chat on ${addr}?`
-  }
-
-  if (step === 3) {
-    // Soft close — no question, address referenced, easy to come back to.
-    return `Totally get if the timing's off, ${fn}. If short-stay on ${addr} becomes worth a look later in the year, my number's here.`
-  }
-
-  // step === 4 — door stays open. Shouldn't be reached in normal flow but
-  // safe to call. No question, no pressure.
-  return `No pressure either way, ${fn} — door's open on ${addr} whenever it suits.`
+function initialMoveAbroad(lead: LeadProfile): string {
+  const addr = lead.address
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  const line2 = fig
+    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
+    : `I saw you enquired about short-letting ${addr} while you're abroad.`
+  const line3 = `Are you currently letting it long-term or is it sitting empty?`
+  return `${line2} ${line3}`
 }
 
-// ── Re-engagement templates ──────────────────────────────────────────────────
+function initialHigherReturn(lead: LeadProfile): string {
+  const addr = lead.address
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  const line2 = fig
+    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
+    : `I saw you enquired about higher-return options for ${addr}.`
+  const line3 = `Are you currently letting it long-term or is it sitting empty?`
+  return `${line2} ${line3}`
+}
 
-function reengagementFollowUp(
-  step: 1 | 2 | 3 | 4,
-  lead: LeadProfile,
-  conversation: ConversationState,
-): string {
-  const fn = firstName(lead.name)
-  const addr = shortAddress(lead.address)
+function initialExistingShortLet(lead: LeadProfile): string {
+  // They already know short-let works. Don't explain it or quote figures —
+  // the question is about what's wrong with the current setup.
+  const line2 = `I saw you enquired about management for ${lead.address}.`
+  const line3 = `What's prompting the search for a new management company?`
+  return `${line2} ${line3}`
+}
+
+function initialRentToRent(lead: LeadProfile): string {
+  const addr = lead.address
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  const line2 = fig
+    ? `I saw you enquired about rent-to-rent short letting for ${addr} — short-let net comes in at ${fig} per month.`
+    : `I saw you enquired about rent-to-rent short letting for ${addr}.`
+  const line3 = `Have you agreed terms with the owner or still at the exploration stage?`
+  return `${line2} ${line3}`
+}
+
+function initialSell(lead: LeadProfile): string {
+  const addr = lead.address
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  const line2 = fig
+    ? `I saw you enquired about ${addr} — short-let net comes in at ${fig} per month in the lead-up to selling.`
+    : `I saw you enquired about short-letting ${addr} in the lead-up to selling.`
+  const line3 = `What's your timeline?`
+  return `${line2} ${line3}`
+}
+
+function initialFallback(lead: LeadProfile): string {
+  const addr = lead.address
+  if (!addr) {
+    return `Thanks for enquiring about short-letting. What's the property and where are you up to with it?`
+  }
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  const line2 = fig
+    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
+    : `I saw you enquired about ${addr}.`
+  const line3 = `What's the situation with it at the moment — let, sitting empty, or somewhere in between?`
+  return `${line2} ${line3}`
+}
+
+function dispatchByProfile(profile: string): (lead: LeadProfile) => string {
+  const p = (profile || '').toLowerCase()
+  if (p.includes('abroad')) return initialMoveAbroad
+  if (p.includes('higher return')) return initialHigherReturn
+  if (p.includes('existing short let')) return initialExistingShortLet
+  if (p.includes('rent to rent') || p.includes('rent-to-rent')) return initialRentToRent
+  if (p.includes('sell')) return initialSell
+  return initialFallback
+}
+
+export function getInitialTemplate(lead: LeadProfile): string {
+  // Allow learnings (Session 5) to override the body if a winning
+  // opener has been surfaced for this profile. Greeting line is kept.
+  if (lead.bestOpeningMessage && lead.bestOpeningMessage.trim()) {
+    const fn = lead.firstName || 'there'
+    const addr = lead.address || ''
+    const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : ''
+    const body = lead.bestOpeningMessage
+      .replace(/\{firstName\}/gi, fn)
+      .replace(/\{name\}/gi, fn)
+      .replace(/\{address\}/gi, addr)
+      .replace(/\{netMonthly\}/gi, fig)
+      .replace(/\{surplus\}/gi, lead.monthlySurplus ? gbp(lead.monthlySurplus) : '')
+      .trim()
+    if (body) return `Hi ${fn}, it's Zac from Stayful. ${body}`
+  }
+
+  const fn = lead.firstName || extractFirstName(lead.name) || 'there'
+  const greeting = `Hi ${fn}, it's Zac from Stayful.`
+  const body = dispatchByProfile(lead.leadProfile)(lead)
+  return `${greeting} ${body}`
+}
+
+// ── Cold follow-ups ──────────────────────────────────────────────────────────
+
+function coldStep1(lead: LeadProfile, conversation: ConversationState): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  const profile = (lead.leadProfile || '').toLowerCase()
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+
+  // If the opener already showed figures, pivot to timeline.
+  if (initialUsedFigures(conversation)) {
+    return `What kind of timeline are you working with on ${addr} — this year or further out?`
+  }
+
+  // No figures in opener but we have them now — introduce them.
+  if (fig) {
+    return `Quick context on ${addr} — short-let net comes in at ${fig} per month. Worth running through the rest of the figures?`
+  }
+
+  // No figures available. Profile-aware angle so it doesn't feel
+  // recycled from the opener.
+  if (profile.includes('sell')) {
+    return `Where are you at with ${addr} — sale on the horizon, or still exploring the short-let route first?`
+  }
+  if (profile.includes('existing short let')) {
+    return `What's the current setup at ${addr} — managing it yourself, or with another agency?`
+  }
+  if (profile.includes('rent to rent') || profile.includes('rent-to-rent')) {
+    return `Where are you at on ${addr} — owner conversation under way, or still mapping it out?`
+  }
+  if (profile.includes('abroad')) {
+    return `When are you planning to head off — sorting the let before you go, or once you're out there?`
+  }
+  return `What's the situation with ${addr} at the moment — let, sitting empty, or somewhere in between?`
+}
+
+function coldStep2(lead: LeadProfile): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  return `Is now a tough time to look at ${addr}, or worth a quick chat?`
+}
+
+function coldStep3(lead: LeadProfile): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  return `Totally understand if the timing isn't right on ${addr}. If you do want to explore it: ${calendlyLink()}`
+}
+
+function coldStep4(lead: LeadProfile): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  return `Door's open on ${addr} whenever — ${calendlyLink()}`
+}
+
+// ── Re-engagement follow-ups ─────────────────────────────────────────────────
+
+function reengStep1(lead: LeadProfile, conversation: ConversationState): string {
   const lastInbound = getLastInboundMessage(conversation)
   const topic = topicFromInbound(lastInbound)
+  const addr = shortAddress(lead.address) || 'the property'
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
 
-  if (step === 1) {
-    // Pick up from their last message. Reference the topic naturally,
-    // one warm continuation question.
-    return `Hi ${fn} — following up on what you mentioned about ${topic}. Where did you land on ${addr} in the end?`
+  if (topic === 'fees') {
+    return `Following on from what you said about the fee side — happy to send the full breakdown for ${addr}. Want me to share it?`
   }
-
-  if (step === 2) {
-    // Different angle. If they raised an objection earlier, apply
-    // VALIDATE → REFRAME. Otherwise try proof / local examples.
-    if (conversationHadObjection(conversation)) {
-      return `Fair concern, ${fn} — most owners flag the same before they see how it plays out. The bit that usually surprises people is how predictable the net comes in once the calendar's working. Worth 15 mins to walk through it on ${addr}?`
-    }
-    return `Hi ${fn}, different angle — we've had a couple of owners near ${addr} switch across recently and the numbers came in ahead of forecast. Want me to send over the comparison?`
+  if (topic === 'tenancy') {
+    return `Following on from what you said about the tenancy — when's the natural break point at ${addr}?`
   }
-
-  if (step === 3) {
-    // Short and direct. Address + one data point. Single question.
-    if (lead.strNetMonthly && lead.strNetMonthly > 0) {
-      return `${fn} — on ${addr}, short-stay net was modelling around ${gbp(lead.strNetMonthly)} a month. Worth a quick call to walk through it?`
-    }
-    if (lead.estimatedRent && lead.estimatedRent > 0) {
-      return `${fn} — on ${addr}, the model puts gross short-stay around ${gbp(lead.estimatedRent)} a month. Quick call to walk through the net?`
-    }
-    return `${fn} — on ${addr}, the short-stay net tends to land materially ahead of a standard let. Quick call to walk through the figures?`
+  if (topic === 'day-to-day') {
+    return `Following on from the hands-on side — at ${addr} that's all on us, calendar through to turnovers and guest comms. Worth talking through the workflow?`
   }
+  if (topic === 'regulation') {
+    return `Following on from the regulation side — happy to flag what currently applies to ${addr}. Want me to send the rundown?`
+  }
+  if (topic === 'income') {
+    return fig
+      ? `Following on from the income side — ${addr} works out at ${fig} per month net. Want the full P&L?`
+      : `Following on from the income side — happy to send a P&L for ${addr}. Worth a look?`
+  }
+  if (topic === 'area') {
+    return `Following on from the area side — happy to send the local occupancy and rate data near ${addr}. Worth a look?`
+  }
+  // No specific topic detected. Continue the thread without claiming
+  // to reference a specific thing (which would feel canned).
+  return `Where are you leaning on ${addr} now — still weighing it up?`
+}
 
-  // step === 4 — final, warm, permanent door-open. No question, no pressure.
-  return `Last note from me on ${addr}, ${fn} — no pressure either way. If short-stay ever becomes worth another look, my line's open whenever.`
+function reengStep2(lead: LeadProfile, conversation: ConversationState): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  if (conversationHadObjection(conversation)) {
+    // VALIDATE → REFRAME → single question.
+    return `That concern is fair — most owners weigh that up before they look at short-let properly. The bit that usually changes the picture is seeing the full P&L on ${addr}. Want me to send it through?`
+  }
+  return `Different angle on ${addr} — what would need to be true for short-let to make sense for you on this one?`
+}
+
+function reengStep3(lead: LeadProfile): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+  if (fig) {
+    return `On ${addr}, short-let net works out at ${fig} per month. Worth a quick call to walk through the rest?`
+  }
+  return `Where's your head at on ${addr} now?`
+}
+
+function reengStep4(lead: LeadProfile): string {
+  const addr = shortAddress(lead.address) || 'the property'
+  return `I'll leave it there for now — if you ever want to run the numbers on ${addr}, you can grab a slot here: ${calendlyLink()}`
 }
 
 // ── Public follow-up entry point ─────────────────────────────────────────────
@@ -272,7 +306,13 @@ export function getFollowUpTemplate(
   conversation: ConversationState,
 ): string {
   if (mode === 'reengagement') {
-    return reengagementFollowUp(step, lead, conversation)
+    if (step === 1) return reengStep1(lead, conversation)
+    if (step === 2) return reengStep2(lead, conversation)
+    if (step === 3) return reengStep3(lead)
+    return reengStep4(lead)
   }
-  return coldFollowUp(step, lead, conversation)
+  if (step === 1) return coldStep1(lead, conversation)
+  if (step === 2) return coldStep2(lead)
+  if (step === 3) return coldStep3(lead)
+  return coldStep4(lead)
 }

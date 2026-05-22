@@ -9,7 +9,11 @@ import {
   MANAGEMENT_LEADS_BOARD,
   MANAGEMENT_LEADS_COLUMNS as COL,
 } from '@/lib/monday-columns'
-import { getFollowUpTemplate, type LeadProfile } from '@/lib/whatsapp-templates'
+import {
+  getFollowUpTemplate,
+  extractFirstName,
+  type LeadProfile,
+} from '@/lib/whatsapp-templates'
 import {
   parseConversation,
   appendMessage,
@@ -33,9 +37,10 @@ interface LeadRow {
   id: string
   name: string
   address: string
+  bedrooms: string
+  leadProfile: string
   phone: string | null
   estimatedRent: number | null
-  profileType: string
   waStatus: string
   waCompleted: boolean
   waMessagesSent: number
@@ -46,6 +51,7 @@ async function fetchLead(leadId: string): Promise<LeadRow | null> {
   const colIds = [
     COL.phoneE164,
     COL.address,
+    COL.bedrooms,
     COL.estAirbnbRent,
     COL.leadProfile,
     COL.waStatus,
@@ -104,9 +110,10 @@ async function fetchLead(leadId: string): Promise<LeadRow | null> {
     id: String(item.id),
     name: item.name || '',
     address: cols.get(COL.address)?.text || '',
+    bedrooms: cols.get(COL.bedrooms)?.text || '',
+    leadProfile: cols.get(COL.leadProfile)?.text || '',
     phone,
     estimatedRent: Number.isFinite(estimatedRent as number) ? (estimatedRent as number) : null,
-    profileType: cols.get(COL.leadProfile)?.text || '',
     waStatus: cols.get(COL.waStatus)?.text || '',
     waCompleted,
     waMessagesSent: Number.isFinite(waMessagesSent) ? waMessagesSent : 0,
@@ -228,14 +235,16 @@ export async function POST(req: NextRequest) {
 
     const profile: LeadProfile = {
       name: lead.name,
+      firstName: extractFirstName(lead.name),
       address: lead.address,
+      bedrooms: lead.bedrooms,
+      leadProfile: lead.leadProfile,
       estimatedRent: lead.estimatedRent,
       // Follow-ups don't re-parse the PDF. If figures matter, the
       // initial send already used them.
       strNetMonthly: null,
       longLetNetMonthly: null,
       monthlySurplus: null,
-      profileType: lead.profileType,
       bestOpeningMessage: null,
     }
     const message = getFollowUpTemplate(

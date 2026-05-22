@@ -9,7 +9,11 @@ import {
   MANAGEMENT_LEADS_BOARD,
   MANAGEMENT_LEADS_COLUMNS as COL,
 } from '@/lib/monday-columns'
-import { getInitialTemplate, type LeadProfile } from '@/lib/whatsapp-templates'
+import {
+  getInitialTemplate,
+  extractFirstName,
+  type LeadProfile,
+} from '@/lib/whatsapp-templates'
 import { getLearningsForProfile } from '@/lib/whatsapp-learnings'
 import {
   emptyState,
@@ -42,9 +46,10 @@ interface LeadRow {
   id: string
   name: string
   address: string
+  bedrooms: string
+  leadProfile: string
   phone: string | null
   estimatedRent: number | null
-  profileType: string
   waMessagesSent: number
   pdfUrl: string | null
 }
@@ -53,6 +58,7 @@ async function fetchLead(leadId: string): Promise<LeadRow | null> {
   const colIds = [
     COL.phoneE164,
     COL.address,
+    COL.bedrooms,
     COL.estAirbnbRent,
     COL.leadProfile,
     COL.waMessagesSent,
@@ -117,9 +123,10 @@ async function fetchLead(leadId: string): Promise<LeadRow | null> {
     id: String(item.id),
     name: item.name || '',
     address: cols.get(COL.address)?.text || '',
+    bedrooms: cols.get(COL.bedrooms)?.text || '',
+    leadProfile: cols.get(COL.leadProfile)?.text || '',
     phone,
     estimatedRent: Number.isFinite(estimatedRent as number) ? (estimatedRent as number) : null,
-    profileType: cols.get(COL.leadProfile)?.text || '',
     waMessagesSent: Number.isFinite(waMessagesSent) ? waMessagesSent : 0,
     pdfUrl,
   }
@@ -270,18 +277,20 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Learnings (Session 5 will replace this).
-    const learnings = await getLearningsForProfile(lead.profileType)
+    const learnings = await getLearningsForProfile(lead.leadProfile)
     const bestOpeningMessage = learnings?.best_opening_message ?? null
 
     // 6. Compose.
     const profile: LeadProfile = {
       name: lead.name,
+      firstName: extractFirstName(lead.name),
       address: lead.address,
+      bedrooms: lead.bedrooms,
+      leadProfile: lead.leadProfile,
       estimatedRent: lead.estimatedRent,
       strNetMonthly,
       longLetNetMonthly,
       monthlySurplus,
-      profileType: lead.profileType,
       bestOpeningMessage,
     }
     const message = getInitialTemplate(profile)

@@ -5,9 +5,12 @@
 // Twilio retries any webhook that doesn't 200 within 15 seconds, and a
 // retry causes the lead to receive duplicate replies. So we ack
 // immediately with a plain 200 OK and run all processing in a detached
-// promise. The outbound reply is sent via Twilio's REST API ourselves —
-// no TwiML required. Errors during processing are caught and logged;
-// they never surface back to Twilio.
+// promise. Errors during processing are caught and logged; they never
+// surface back to Twilio.
+//
+// Intent classification and reply composition are fused into a single
+// Claude call returning JSON — halves end-to-end latency vs the previous
+// two-call flow and keeps the two outputs in lockstep.
 
 import { NextRequest } from 'next/server'
 import { mondayQuery, escapeJSONForGraphQL } from '@/lib/monday-client'
@@ -21,10 +24,27 @@ import {
   serializeConversation,
   type ConversationState,
 } from '@/lib/whatsapp-conversation'
-import { classifyIntent, type Intent } from '@/lib/whatsapp-intent'
+import { extractFirstName } from '@/lib/whatsapp-templates'
 
 export const maxDuration = 30
 export const dynamic = 'force-dynamic'
+
+type Intent =
+  | 'booking_signal'
+  | 'positive_interest'
+  | 'objection'
+  | 'abandonment'
+  | 'question'
+  | 'unclear'
+
+const ALLOWED_INTENTS: Intent[] = [
+  'booking_signal',
+  'positive_interest',
+  'objection',
+  'abandonment',
+  'question',
+  'unclear',
+]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,9 +57,16 @@ function stripChannelPrefix(phone: string): string {
 interface LeadLookup {
   id: string
   name: string
+  firstName: string
   address: string
+  bedrooms: string
+  leadProfile: string
   conversation: ConversationState
   waStatus: string
+  // STR figures aren't recomputed on reply (PDF parse is too slow for the
+  // 15s Twilio budget). null here is honestly surfaced to Claude as
+  // "not yet calculated".
+  strNetMonthly: number | null
 }
 
 async function findLeadByPhone(phone: string): Promise<LeadLookup | null> {
@@ -63,9 +90,13 @@ async function findLeadByPhone(phone: string): Promise<LeadLookup | null> {
         items {
           id
           name
-          column_values(ids: ["${COL.address}", "${COL.waConversation}", "${COL.waStatus}"]) {
-            id text value
-          }
+          column_values(ids: [
+            "${COL.address}",
+            "${COL.bedrooms}",
+            "${COL.leadProfile}",
+            "${COL.waConversation}",
+            "${COL.waStatus}"
+          ]) { id text value }
         }
       }
     }`
@@ -83,9 +114,13 @@ async function findLeadByPhone(phone: string): Promise<LeadLookup | null> {
       return {
         id: String(item.id),
         name: item.name || '',
+        firstName: extractFirstName(item.name || ''),
         address: cols.get(COL.address)?.text || '',
+        bedrooms: cols.get(COL.bedrooms)?.text || '',
+        leadProfile: cols.get(COL.leadProfile)?.text || '',
         conversation,
         waStatus: cols.get(COL.waStatus)?.text || '',
+        strNetMonthly: null,
       }
     } catch (err) {
       console.error('[whatsapp/reply] lookup failed for variant', variant, err)
@@ -147,36 +182,75 @@ async function logActivity(payload: {
   }
 }
 
-// Compose a contextual reply via Claude. Returns null on error.
-async function generateReply(
+// Single Claude call that classifies intent AND composes the reply.
+// Returns null only when the API itself fails (network / auth / 5xx /
+// missing key). On a JSON parse failure, falls back to {intent:
+// 'unclear', reply: <raw text>} per spec.
+async function classifyAndReply(
   conversation: ConversationState,
-  leadName: string,
-  leadAddress: string,
-): Promise<string | null> {
+  inboundBody: string,
+  lead: LeadLookup,
+): Promise<{ intent: Intent; reply: string } | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
 
+  const calendly = process.env.CALENDLY_LINK || 'https://calendly.com/stayful/web-meeting'
+
+  // Conversation history → messages array. Map outbound to assistant,
+  // inbound to user. Make sure the final user message is the inbound
+  // body we're responding to (the conversation was just appended with
+  // it in the caller, but be defensive).
   const recent = conversation.messages.slice(-6)
-  const messages = recent.map((m) => ({
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = recent.map((m) => ({
     role: m.role === 'outbound' ? 'assistant' : 'user',
     content: m.content,
   }))
-
-  // If the most recent message is not an inbound one, Claude needs
-  // something to respond to — skip.
-  if (!messages.length || messages[messages.length - 1].role !== 'user') {
-    return null
+  if (
+    messages.length === 0 ||
+    messages[messages.length - 1].role !== 'user' ||
+    messages[messages.length - 1].content !== inboundBody
+  ) {
+    messages.push({ role: 'user', content: inboundBody })
   }
 
-  const calendly = process.env.CALENDLY_LINK || 'https://calendly.com/stayful/web-meeting'
-  const system = `You are an SMS assistant for Stayful, a Sheffield-based short-term rental property management company. You are texting a UK property owner who was cold contacted about letting Stayful manage their property as a short-term rental. Your role: qualify the lead, handle objections using the VALIDATE → REFRAME → QUANTIFY → PROOF → QUESTION framework, and guide toward booking a web meeting. You are warm, professional, specific, and never pushy. You write like a knowledgeable person, not a chatbot. Maximum 3 sentences per reply. SMS is plain text — never use bold, markdown, bullet points, or emoji. Never mention you are an AI.
+  const strNetLine = lead.strNetMonthly
+    ? `£${Math.round(lead.strNetMonthly).toLocaleString('en-GB')} per month`
+    : 'not yet calculated'
+
+  const system = `You are Zac from Stayful, a UK-based short-term rental property management company. You are having an SMS conversation with a UK property owner who enquired about short letting their property.
+
+Your goals in order:
+1. Understand what they are saying and respond naturally.
+2. Answer any questions they have briefly and specifically.
+3. Guide the conversation toward booking a web meeting.
+
+Rules:
+- Maximum 2-3 sentences per reply.
+- Plain text only — no bullet points, no bold, no emoji.
+- Never mention you are an AI or automated.
+- Never use filler phrases like "great", "absolutely", "certainly", "of course", "happy to help".
+- Never end with the lead's name. Never address them by name mid-message. Use first name once on the first message only.
+- One question or CTA per message maximum.
+- Only include the Calendly link if they explicitly ask for a call, ask how to book, or show strong buying intent.
+- Calendly link: ${calendly}
+- Use specific figures from their property data when available. If you don't have a figure, don't invent one.
+- If they ask something you don't know — be honest and brief.
 
 Lead context:
-- Name: ${leadName || 'unknown'}
-- Property: ${leadAddress || 'unknown'}
-- Booking link (only share when the lead is ready to book): ${calendly}
+- Property: ${lead.address || 'unknown'}
+- Profile: ${lead.leadProfile || 'unknown'}
+- STR net: ${strNetLine}
 
-Respond as the next outbound SMS. Plain text only, no greeting boilerplate, no signature.`
+Always respond in this exact JSON format and nothing else. No code fence, no preamble:
+{"intent": "booking_signal|positive_interest|objection|abandonment|question|unclear", "reply": "your SMS reply here"}
+
+intent definitions:
+- booking_signal: asks for call, asks how to book, says yes, asks for more detail actively
+- positive_interest: engaged but no specific action yet
+- objection: raises concern about cost, trust, management, consistency, mortgage, tenants
+- abandonment: stop, not interested, remove me, unsubscribe
+- question: asks a specific factual question
+- unclear: cannot determine`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -188,18 +262,47 @@ Respond as the next outbound SMS. Plain text only, no greeting boilerplate, no s
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 300,
+        max_tokens: 400,
         system,
         messages,
       }),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error('[whatsapp/reply] claude api status', res.status)
+      return null
+    }
     const json: any = await res.json()
     const text = json?.content?.[0]?.text
-    if (typeof text !== 'string') return null
-    return text.trim()
+    if (typeof text !== 'string' || !text.trim()) return null
+
+    // Strip accidental fencing — sometimes models wrap JSON in
+    // ```json ... ``` despite instructions otherwise.
+    const cleaned = text
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim()
+
+    try {
+      const parsed = JSON.parse(cleaned)
+      const intent = ALLOWED_INTENTS.includes(parsed?.intent) ? (parsed.intent as Intent) : 'unclear'
+      const reply = typeof parsed?.reply === 'string' ? parsed.reply.trim() : ''
+      if (!reply) {
+        // Empty reply after parse — fall back to raw cleaned text if it
+        // looks like a real reply (not just a JSON fragment).
+        if (cleaned && !cleaned.startsWith('{')) return { intent: 'unclear', reply: cleaned }
+        return null
+      }
+      return { intent, reply }
+    } catch {
+      // JSON parse failed. Use the raw text as the reply with unclear
+      // intent, per spec. Strip any leading "{" garbage.
+      const safe = cleaned.replace(/^\{.*?:\s*"?/, '').replace(/"?\s*\}?$/, '').trim()
+      if (!safe) return null
+      return { intent: 'unclear', reply: safe }
+    }
   } catch (err) {
-    console.error('[whatsapp/reply] claude reply failed', err)
+    console.error('[whatsapp/reply] claude call failed', err)
     return null
   }
 }
@@ -234,10 +337,39 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     return
   }
 
-  const intent: Intent = await classifyIntent(body, lead.conversation)
-  let conversation = appendMessage(lead.conversation, 'inbound', body, intent)
+  // Append inbound to conversation up-front (without intent yet — set
+  // after the Claude call).
+  let conversation = appendMessage(lead.conversation, 'inbound', body)
 
-  // Abandonment — close out, no reply.
+  const result = await classifyAndReply(conversation, body, lead)
+  if (!result) {
+    // Claude failed entirely. Persist the inbound so the conversation
+    // log stays accurate, but do not send a reply or a placeholder.
+    try {
+      const inboundCount = conversation.messages.filter((m) => m.role === 'inbound').length
+      await updateConversationColumns(lead.id, {
+        [COL.waConversation]: serializeConversation(conversation),
+        [COL.waReplies]: inboundCount,
+        ...(lead.waStatus !== 'Booked' ? { [COL.waStatus]: { label: 'Replied' } } : {}),
+      })
+    } catch (err) {
+      console.error('[whatsapp/reply] monday update after claude fail', err)
+    }
+    return
+  }
+
+  const { intent, reply: replyText } = result
+
+  // Tag the inbound message with the classified intent now we have it.
+  conversation = {
+    ...conversation,
+    messages: conversation.messages.map((m, i, arr) =>
+      i === arr.length - 1 && m.role === 'inbound' ? { ...m, intent } : m,
+    ),
+  }
+
+  // Abandonment — close out, no reply. The reply text from Claude is
+  // discarded; we never message back after abandonment.
   if (intent === 'abandonment') {
     try {
       await updateConversationColumns(lead.id, {
@@ -247,7 +379,7 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
           ...conversation,
           abandonmentSignals: (conversation.abandonmentSignals || 0) + 1,
         }),
-        [COL.waReplies]: (conversation.messages.filter((m) => m.role === 'inbound').length),
+        [COL.waReplies]: conversation.messages.filter((m) => m.role === 'inbound').length,
       })
     } catch (err) {
       console.error('[whatsapp/reply] monday abandonment update failed', err)
@@ -262,32 +394,11 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     return
   }
 
-  // Booking — acknowledge with Calendly link, mark Booked.
-  const calendly = process.env.CALENDLY_LINK || 'https://calendly.com/stayful/web-meeting'
-  let replyText: string | null = null
-  let newStatus: 'Booked' | 'Replied' = 'Replied'
-
-  if (intent === 'booking_signal') {
-    newStatus = 'Booked'
-    conversation = { ...conversation, bookingDetected: true }
-    replyText =
-      `Brilliant — easiest way is to grab a slot here: ${calendly}. ` +
-      `Pick whichever works and I'll have the figures and a couple of comparable cases ready for you. Looking forward to it.`
-  } else {
-    // For all other intents, generate a contextual reply.
-    replyText = await generateReply(conversation, lead.name, lead.address)
-    if (!replyText) {
-      // Don't go silent: send a safe fallback.
-      replyText =
-        `Thanks for coming back to me. Happy to share the breakdown for your property and answer any specifics — what would be most useful to know first?`
-    }
-  }
-
   // Send the reply.
   const sendResult = await sendTwilio(phone, replyText)
   if ('error' in sendResult) {
     console.error('[whatsapp/reply] twilio send failed', sendResult.error)
-    // Still record the inbound message so we don't lose state.
+    // Persist state even if we couldn't send.
     try {
       await updateConversationColumns(lead.id, {
         [COL.waConversation]: serializeConversation(conversation),
@@ -301,6 +412,9 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
   }
 
   conversation = appendMessage(conversation, 'outbound', replyText)
+  if (intent === 'booking_signal') {
+    conversation = { ...conversation, bookingDetected: true }
+  }
 
   // Final Monday update.
   const inboundCount = conversation.messages.filter((m) => m.role === 'inbound').length
@@ -308,8 +422,7 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     [COL.waConversation]: serializeConversation(conversation),
     [COL.waReplies]: inboundCount,
   }
-  // Only set status if not already Booked (preserve the stronger state).
-  if (newStatus === 'Booked') {
+  if (intent === 'booking_signal') {
     updates[COL.waStatus] = { label: 'Booked' }
   } else if (lead.waStatus !== 'Booked') {
     updates[COL.waStatus] = { label: 'Replied' }

@@ -17,6 +17,7 @@ export const MANAGEMENT_LEADS_COLUMNS = {
   offerExpiry: 'date_mm0wdvyx',
   estAirbnbRent: 'numbers_mkn25e0y',
   address: 'text6',
+  bedrooms: 'text5',
   email: 'text_mkygb5xx',
   phoneE164: 'phone_mm1hp0a8',
 
