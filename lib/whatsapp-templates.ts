@@ -1,11 +1,16 @@
 // lib/whatsapp-templates.ts
-// Outbound WhatsApp message templates for cold-lead outreach.
+// Outbound SMS message templates for cold-lead outreach. (File name is
+// historical — the engine was originally built for WhatsApp and the
+// routes still live under /api/whatsapp/.)
 //
 // Tone follows the Stayful lead-intelligence framework:
 // VALIDATE → REFRAME → QUANTIFY → PROOF → QUESTION. Outreach is
 // property-owner-to-property-owner, direct, never pushy, never AI.
 // First message never includes the Calendly link — that's earned by
 // a reply.
+//
+// SMS is plain text only — no markdown, no bold, no bullets, no emoji.
+// Keep messages short; each SMS segment is ~160 GSM-7 chars.
 
 export interface LeadProfile {
   name: string

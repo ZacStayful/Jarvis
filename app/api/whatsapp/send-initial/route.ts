@@ -178,10 +178,10 @@ async function sendTwilio(toPhone: string, body: string): Promise<{ messageSid: 
   const from = process.env.TWILIO_WHATSAPP_NUMBER
   if (!sid || !token || !from) return { error: 'twilio_env_missing' }
 
-  const to = toPhone.startsWith('whatsapp:') ? toPhone : `whatsapp:${toPhone}`
-  // Defensive — Twilio rejects with a vague error if From isn't whatsapp:-prefixed.
-  // Env var is documented as `whatsapp:+...` but guard anyway in case it's set bare.
-  const fromNormalised = from.startsWith('whatsapp:') ? from : `whatsapp:${from}`
+  // SMS — plain E.164 on both From and To, no channel prefix. Defensively
+  // strip any leftover whatsapp: in case the env var is set with one.
+  const to = toPhone.replace(/^whatsapp:/i, '')
+  const fromNormalised = from.replace(/^whatsapp:/i, '')
   const auth = 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64')
   const params = new URLSearchParams({ From: fromNormalised, To: to, Body: body })
 

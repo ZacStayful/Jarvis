@@ -21,7 +21,7 @@ const ALLOWED: Intent[] = [
   'unclear',
 ]
 
-const CLASSIFIER_SYSTEM = `You are classifying the intent of a WhatsApp reply from a UK property owner contacted about short-term rental management. Reply with exactly one word from this list: booking_signal, positive_interest, objection, abandonment, question, unclear. Nothing else.
+const CLASSIFIER_SYSTEM = `You are classifying the intent of an SMS reply from a UK property owner contacted about short-term rental management. Reply with exactly one word from this list: booking_signal, positive_interest, objection, abandonment, question, unclear. Nothing else.
 
 booking_signal: mentions dates, wants to discuss, asks for call, asks for more info actively
 positive_interest: sounds open but no specific action

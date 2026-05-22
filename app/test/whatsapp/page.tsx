@@ -104,7 +104,7 @@ export default function WhatsAppTestPanel() {
           Command Centre
         </Link>
         <div className="text-xs uppercase tracking-widest" style={{ color: C.textLow }}>
-          WhatsApp · Test Panel
+          SMS · Test Panel
         </div>
       </header>
 
@@ -115,8 +115,8 @@ export default function WhatsAppTestPanel() {
           </h1>
           <p className="text-sm" style={{ color: C.textMid }}>
             Manually fires <code style={{ color: C.bright }}>POST /api/whatsapp/send-initial</code> with the
-            given Monday lead ID. Same path n8n will use in production. Skips if the lead already has WA Messages
-            Sent &gt; 0.
+            given Monday lead ID. Sends a real Twilio SMS to the lead&rsquo;s phone. Same path n8n will use in
+            production. Skips if the lead already has WA Messages Sent &gt; 0.
           </p>
         </div>
 
@@ -166,7 +166,7 @@ export default function WhatsAppTestPanel() {
             </button>
           </div>
           <p className="text-[11px] mt-3" style={{ color: C.textLow }}>
-            This makes a real Twilio send. Use a lead row you control. Re-submitting the same ID returns
+            This sends a real SMS via Twilio. Use a lead row you control. Re-submitting the same ID returns
             <code style={{ color: C.amber }}> already_contacted</code>.
           </p>
         </form>
