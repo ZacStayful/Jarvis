@@ -8,6 +8,14 @@
 // contact only, at the start, never repeated and never at the end.
 // SMS is plain text — no markdown, no bullets, no emoji. Read every
 // message aloud — if it sounds like a robot wrote it, rewrite it.
+//
+// Re-engagement rules:
+// - Every no-reply re-engagement must mention short-term letting and
+//   identify as Zac from Stayful — the lead may have forgotten the context.
+// - Warm re-engagement (lead has replied before) picks up the thread
+//   from the last thing the lead said — no re-introduction needed.
+// - Never use "Where's your head at" or "Where are you at with this".
+//   Always use warm, welcoming language instead.
 
 import type { ConversationState } from './whatsapp-conversation'
 import { getLastInboundMessage } from './whatsapp-conversation'
@@ -92,6 +100,12 @@ function conversationHadObjection(conversation: ConversationState): boolean {
   )
 }
 
+// Returns true if the lead has ever sent an inbound message —
+// i.e. the conversation is warm, not cold.
+function leadHasReplied(conversation: ConversationState): boolean {
+  return conversation?.messages?.some((m) => m.role === 'inbound') ?? false
+}
+
 // ── Initial message ──────────────────────────────────────────────────────────
 
 // Each profile-specific builder returns line 2 + line 3. The greeting
@@ -102,8 +116,8 @@ function initialMoveAbroad(lead: LeadProfile): string {
   const addr = lead.address
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
   const line2 = fig
-    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
-    : `I saw you enquired about short-letting ${addr} while you're abroad.`
+    ? `I saw you enquired about short-term letting ${addr} — works out at ${fig} per month net.`
+    : `I saw you enquired about short-term letting ${addr} while you're abroad.`
   const line3 = `Are you currently letting it long-term or is it sitting empty?`
   return `${line2} ${line3}`
 }
@@ -112,8 +126,8 @@ function initialHigherReturn(lead: LeadProfile): string {
   const addr = lead.address
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
   const line2 = fig
-    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
-    : `I saw you enquired about higher-return options for ${addr}.`
+    ? `I saw you enquired about short-term letting ${addr} — works out at ${fig} per month net.`
+    : `I saw you enquired about higher-return options for ${addr} through short-term letting.`
   const line3 = `Are you currently letting it long-term or is it sitting empty?`
   return `${line2} ${line3}`
 }
@@ -121,7 +135,7 @@ function initialHigherReturn(lead: LeadProfile): string {
 function initialExistingShortLet(lead: LeadProfile): string {
   // They already know short-let works. Don't explain it or quote figures —
   // the question is about what's wrong with the current setup.
-  const line2 = `I saw you enquired about management for ${lead.address}.`
+  const line2 = `I saw you enquired about short-let management for ${lead.address}.`
   const line3 = `What's prompting the search for a new management company?`
   return `${line2} ${line3}`
 }
@@ -140,8 +154,8 @@ function initialSell(lead: LeadProfile): string {
   const addr = lead.address
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
   const line2 = fig
-    ? `I saw you enquired about ${addr} — short-let net comes in at ${fig} per month in the lead-up to selling.`
-    : `I saw you enquired about short-letting ${addr} in the lead-up to selling.`
+    ? `I saw you enquired about short-term letting ${addr} in the lead-up to selling — net comes in at ${fig} per month.`
+    : `I saw you enquired about short-term letting ${addr} in the lead-up to selling.`
   const line3 = `What's your timeline?`
   return `${line2} ${line3}`
 }
@@ -149,12 +163,12 @@ function initialSell(lead: LeadProfile): string {
 function initialFallback(lead: LeadProfile): string {
   const addr = lead.address
   if (!addr) {
-    return `Thanks for enquiring about short-letting. What's the property and where are you up to with it?`
+    return `Thanks for enquiring about short-term letting. What's the property and where are you up to with it?`
   }
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
   const line2 = fig
-    ? `I saw you enquired about ${addr} — works out at ${fig} per month net as a short-let.`
-    : `I saw you enquired about ${addr}.`
+    ? `I saw you enquired about short-term letting ${addr} — works out at ${fig} per month net.`
+    : `I saw you enquired about short-term letting ${addr}.`
   const line3 = `What's the situation with it at the moment — let, sitting empty, or somewhere in between?`
   return `${line2} ${line3}`
 }
@@ -201,47 +215,74 @@ function coldStep1(lead: LeadProfile, conversation: ConversationState): string {
 
   // If the opener already showed figures, pivot to timeline.
   if (initialUsedFigures(conversation)) {
-    return `What kind of timeline are you working with on ${addr} — this year or further out?`
+    return `Just following up on the short-term letting for ${addr} — what kind of timeline are you working with on it?`
   }
 
   // No figures in opener but we have them now — introduce them.
   if (fig) {
-    return `Quick context on ${addr} — short-let net comes in at ${fig} per month. Worth running through the rest of the figures?`
+    return `Just following up on ${addr} — short-let net comes in at ${fig} per month. Worth running through the rest of the figures?`
   }
 
-  // No figures available. Profile-aware angle so it doesn't feel
-  // recycled from the opener.
+  // No figures available. Profile-aware angle.
   if (profile.includes('sell')) {
-    return `Where are you at with ${addr} — sale on the horizon, or still exploring the short-let route first?`
+    return `Just checking in on the short-term letting for ${addr} — is the sale still on the horizon, or still exploring options?`
   }
   if (profile.includes('existing short let')) {
-    return `What's the current setup at ${addr} — managing it yourself, or with another agency?`
+    return `Just checking in on ${addr} — are you still self-managing, or looking to hand it over?`
   }
   if (profile.includes('rent to rent') || profile.includes('rent-to-rent')) {
-    return `Where are you at on ${addr} — owner conversation under way, or still mapping it out?`
+    return `Just following up on the short-term letting for ${addr} — is the conversation with the owner still moving forward?`
   }
   if (profile.includes('abroad')) {
-    return `When are you planning to head off — sorting the let before you go, or once you're out there?`
+    return `Just checking in on the short-term letting for ${addr} — when are you planning to head off?`
   }
-  return `What's the situation with ${addr} at the moment — let, sitting empty, or somewhere in between?`
+  return `Just following up on short-term letting ${addr} — what's the situation with it at the moment?`
 }
 
 function coldStep2(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `Is now a tough time to look at ${addr}, or worth a quick chat?`
+  return `It's Zac from Stayful — just touching base on short-term letting ${addr}. Is the timing right to have a chat, or would a different time work better?`
 }
 
 function coldStep3(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `Totally understand if the timing isn't right on ${addr}. If you do want to explore it: ${calendlyLink()}`
+  return `It's Zac from Stayful — still happy to help with short-term letting ${addr} whenever the time is right. You can grab a slot here if useful: ${calendlyLink()}`
 }
 
 function coldStep4(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `Door's open on ${addr} whenever — ${calendlyLink()}`
+  return `It's Zac from Stayful — leaving the door open on ${addr} whenever it suits. ${calendlyLink()}`
 }
 
 // ── Re-engagement follow-ups ─────────────────────────────────────────────────
+//
+// Two distinct scenarios:
+//
+// WARM — lead has replied before, conversation went quiet.
+// These pick up the thread from the last thing the lead said.
+// No need to re-introduce Stayful — they know who we are.
+//
+// NO-REPLY — lead never replied (or hasn't replied in a long time).
+// Every message must identify as Zac from Stayful and mention
+// short-term letting — the lead may have forgotten the original context.
+
+// Rotating no-reply openers — used in reengStep1 when the lead hasn't replied.
+// Seeded by message count so the same lead always gets a different variant.
+const NO_REPLY_REENG_VARIANTS = [
+  (addr: string) =>
+    `It's Zac from Stayful — just touching base to see if you're still interested in short-term letting ${addr}. Happy to help however I can.`,
+  (addr: string) =>
+    `It's Zac from Stayful — just checking in on short-term letting ${addr}. How are you feeling about it at the moment?`,
+  (addr: string) =>
+    `It's Zac from Stayful — hope things are well. Still happy to have a conversation about short-term letting ${addr} whenever the time is right.`,
+  (addr: string) =>
+    `It's Zac from Stayful — just wanted to check back in on ${addr}. Are you still considering the short-term letting route?`,
+]
+
+function noReplyReengOpener(addr: string, variantIndex: number): string {
+  const variant = NO_REPLY_REENG_VARIANTS[variantIndex % NO_REPLY_REENG_VARIANTS.length]
+  return variant(addr)
+}
 
 function reengStep1(lead: LeadProfile, conversation: ConversationState): string {
   const lastInbound = getLastInboundMessage(conversation)
@@ -249,52 +290,78 @@ function reengStep1(lead: LeadProfile, conversation: ConversationState): string 
   const addr = shortAddress(lead.address) || 'the property'
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
 
-  if (topic === 'fees') {
-    return `Following on from what you said about the fee side — happy to send the full breakdown for ${addr}. Want me to share it?`
+  // WARM — lead has replied before. Pick up the thread.
+  if (leadHasReplied(conversation)) {
+    if (topic === 'fees') {
+      return `Following up on the fee question — our management fee is 15% plus VAT, full end-to-end. Does that work for ${addr} or worth a quick call to run the numbers?`
+    }
+    if (topic === 'tenancy') {
+      return `Following up on the tenancy side — when's the natural break point at ${addr}?`
+    }
+    if (topic === 'day-to-day') {
+      return `Following up on the management side — everything at ${addr} is handled end-to-end, from bookings through to turnovers and guest comms. Worth a quick call to walk through it?`
+    }
+    if (topic === 'regulation') {
+      return `Following up on the regulation question — happy to go through what currently applies to ${addr}. Want me to send the rundown?`
+    }
+    if (topic === 'income') {
+      return fig
+        ? `Following up on the income side — ${addr} works out at ${fig} per month net on short-term letting. Want the full breakdown?`
+        : `Following up on the income question — happy to run the figures for ${addr}. Worth a look?`
+    }
+    if (topic === 'area') {
+      return `Following up on the area side — happy to send the local occupancy and rate data near ${addr}. Worth a look?`
+    }
+    // Warm but no specific topic — reference the conversation naturally.
+    return `Just picking up where we left off on ${addr} — how are you feeling about it now?`
   }
-  if (topic === 'tenancy') {
-    return `Following on from what you said about the tenancy — when's the natural break point at ${addr}?`
-  }
-  if (topic === 'day-to-day') {
-    return `Following on from the hands-on side — at ${addr} that's all on us, calendar through to turnovers and guest comms. Worth talking through the workflow?`
-  }
-  if (topic === 'regulation') {
-    return `Following on from the regulation side — happy to flag what currently applies to ${addr}. Want me to send the rundown?`
-  }
-  if (topic === 'income') {
-    return fig
-      ? `Following on from the income side — ${addr} works out at ${fig} per month net. Want the full P&L?`
-      : `Following on from the income side — happy to send a P&L for ${addr}. Worth a look?`
-  }
-  if (topic === 'area') {
-    return `Following on from the area side — happy to send the local occupancy and rate data near ${addr}. Worth a look?`
-  }
-  // No specific topic detected. Continue the thread without claiming
-  // to reference a specific thing (which would feel canned).
-  return `Where are you leaning on ${addr} now — still weighing it up?`
+
+  // NO-REPLY — lead has never replied. Use a rotating warm opener
+  // that mentions short-term letting and identifies Stayful.
+  const outboundCount = conversation?.messages?.filter((m) => m.role === 'outbound').length ?? 0
+  return noReplyReengOpener(addr, outboundCount)
 }
 
 function reengStep2(lead: LeadProfile, conversation: ConversationState): string {
   const addr = shortAddress(lead.address) || 'the property'
-  if (conversationHadObjection(conversation)) {
-    // VALIDATE → REFRAME → single question.
-    return `That concern is fair — most owners weigh that up before they look at short-let properly. The bit that usually changes the picture is seeing the full P&L on ${addr}. Want me to send it through?`
+  const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
+
+  // WARM — lead has replied before.
+  if (leadHasReplied(conversation)) {
+    if (conversationHadObjection(conversation)) {
+      return `That concern is fair — most owners weigh that up before looking at short-term letting properly. The bit that usually changes the picture is seeing the actual figures for ${addr}. Want me to send them through?`
+    }
+    return `Different angle on ${addr} — what would need to be true for short-term letting to make sense for you on this one?`
   }
-  return `Different angle on ${addr} — what would need to be true for short-let to make sense for you on this one?`
+
+  // NO-REPLY — rotate to a different variant.
+  const outboundCount = conversation?.messages?.filter((m) => m.role === 'outbound').length ?? 1
+  return noReplyReengOpener(addr, outboundCount)
 }
 
-function reengStep3(lead: LeadProfile): string {
+function reengStep3(lead: LeadProfile, conversation: ConversationState): string {
   const addr = shortAddress(lead.address) || 'the property'
   const fig = lead.strNetMonthly ? gbp(lead.strNetMonthly) : null
-  if (fig) {
-    return `On ${addr}, short-let net works out at ${fig} per month. Worth a quick call to walk through the rest?`
+
+  // WARM — lead has replied before.
+  if (leadHasReplied(conversation)) {
+    if (fig) {
+      return `Just wanted to mention — short-term letting ${addr} works out at ${fig} per month net. Worth a quick call to walk through the rest?`
+    }
+    return `Just checking in on ${addr} — how are you feeling about the short-term letting route at the moment?`
   }
-  return `Where's your head at on ${addr} now?`
+
+  // NO-REPLY — third attempt, rotate variant, add figures if available.
+  if (fig) {
+    return `It's Zac from Stayful — just one more touch on ${addr}. Short-term letting net comes in at ${fig} per month. Worth a 20-minute call to see if it stacks up for you?`
+  }
+  const outboundCount = conversation?.messages?.filter((m) => m.role === 'outbound').length ?? 2
+  return noReplyReengOpener(addr, outboundCount)
 }
 
 function reengStep4(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `I'll leave it there for now — if you ever want to run the numbers on ${addr}, you can grab a slot here: ${calendlyLink()}`
+  return `It's Zac from Stayful — I'll leave it there for now on short-term letting ${addr}. If you ever want to run the numbers, you can grab a slot here: ${calendlyLink()}`
 }
 
 // ── Public follow-up entry point ─────────────────────────────────────────────
@@ -308,7 +375,7 @@ export function getFollowUpTemplate(
   if (mode === 'reengagement') {
     if (step === 1) return reengStep1(lead, conversation)
     if (step === 2) return reengStep2(lead, conversation)
-    if (step === 3) return reengStep3(lead)
+    if (step === 3) return reengStep3(lead, conversation)
     return reengStep4(lead)
   }
   if (step === 1) return coldStep1(lead, conversation)
