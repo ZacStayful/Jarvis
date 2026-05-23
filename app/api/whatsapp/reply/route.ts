@@ -4,15 +4,14 @@
 //
 // Twilio retries any webhook that doesn't 200 within 15 seconds, and a
 // retry causes the lead to receive duplicate replies. So we ack
-// immediately with a plain 200 OK and run all processing in a detached
-// promise. Errors during processing are caught and logged; they never
-// surface back to Twilio.
+// immediately with empty TwiML and run all processing via after() which
+// guarantees execution completes after the response is sent.
 //
 // Intent classification and reply composition are fused into a single
 // Claude call returning JSON — halves end-to-end latency vs the previous
 // two-call flow and keeps the two outputs in lockstep.
 
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { mondayQuery, escapeJSONForGraphQL } from '@/lib/monday-client'
 import {
   MANAGEMENT_LEADS_BOARD,
@@ -49,8 +48,6 @@ const ALLOWED_INTENTS: Intent[] = [
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function stripChannelPrefix(phone: string): string {
-  // Defensive — strip any leftover channel prefix in case Twilio's payload
-  // ever includes one (it doesn't for SMS, but historical data might).
   return phone.replace(/^(whatsapp|sms):/i, '').trim()
 }
 
@@ -63,15 +60,10 @@ interface LeadLookup {
   leadProfile: string
   conversation: ConversationState
   waStatus: string
-  // STR figures aren't recomputed on reply (PDF parse is too slow for the
-  // 15s Twilio budget). null here is honestly surfaced to Claude as
-  // "not yet calculated".
   strNetMonthly: number | null
 }
 
 async function findLeadByPhone(phone: string): Promise<LeadLookup | null> {
-  // Try multiple variations — Monday stores phone with/without + and
-  // may have spaces depending on entry path.
   const variants = Array.from(
     new Set([
       phone,
@@ -135,7 +127,6 @@ async function sendTwilio(toPhone: string, body: string): Promise<{ messageSid: 
   const from = process.env.TWILIO_WHATSAPP_NUMBER
   if (!sid || !token || !from) return { error: 'twilio_env_missing' }
 
-  // SMS — plain E.164 on both From and To, no channel prefix.
   const to = toPhone.replace(/^whatsapp:/i, '')
   const fromNormalised = from.replace(/^whatsapp:/i, '')
   const auth = 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64')
@@ -182,10 +173,6 @@ async function logActivity(payload: {
   }
 }
 
-// Single Claude call that classifies intent AND composes the reply.
-// Returns null only when the API itself fails (network / auth / 5xx /
-// missing key). On a JSON parse failure, falls back to {intent:
-// 'unclear', reply: <raw text>} per spec.
 async function classifyAndReply(
   conversation: ConversationState,
   inboundBody: string,
@@ -196,10 +183,6 @@ async function classifyAndReply(
 
   const calendly = process.env.CALENDLY_LINK || 'https://calendly.com/stayful/web-meeting'
 
-  // Conversation history → messages array. Map outbound to assistant,
-  // inbound to user. Make sure the final user message is the inbound
-  // body we're responding to (the conversation was just appended with
-  // it in the caller, but be defensive).
   const recent = conversation.messages.slice(-6)
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = recent.map((m) => ({
     role: m.role === 'outbound' ? 'assistant' : 'user',
@@ -275,8 +258,6 @@ intent definitions:
     const text = json?.content?.[0]?.text
     if (typeof text !== 'string' || !text.trim()) return null
 
-    // Strip accidental fencing — sometimes models wrap JSON in
-    // ```json ... ``` despite instructions otherwise.
     const cleaned = text
       .trim()
       .replace(/^```(?:json)?\s*/i, '')
@@ -288,15 +269,11 @@ intent definitions:
       const intent = ALLOWED_INTENTS.includes(parsed?.intent) ? (parsed.intent as Intent) : 'unclear'
       const reply = typeof parsed?.reply === 'string' ? parsed.reply.trim() : ''
       if (!reply) {
-        // Empty reply after parse — fall back to raw cleaned text if it
-        // looks like a real reply (not just a JSON fragment).
         if (cleaned && !cleaned.startsWith('{')) return { intent: 'unclear', reply: cleaned }
         return null
       }
       return { intent, reply }
     } catch {
-      // JSON parse failed. Use the raw text as the reply with unclear
-      // intent, per spec. Strip any leading "{" garbage.
       const safe = cleaned.replace(/^\{.*?:\s*"?/, '').replace(/"?\s*\}?$/, '').trim()
       if (!safe) return null
       return { intent: 'unclear', reply: safe }
@@ -322,7 +299,7 @@ async function updateConversationColumns(
   await mondayQuery(mutation)
 }
 
-// ── Async processor (fire-and-forget) ────────────────────────────────────────
+// ── Async processor ───────────────────────────────────────────────────────────
 
 async function processInboundReply(fromPhone: string, body: string): Promise<void> {
   const phone = stripChannelPrefix(fromPhone)
@@ -337,14 +314,10 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     return
   }
 
-  // Append inbound to conversation up-front (without intent yet — set
-  // after the Claude call).
   let conversation = appendMessage(lead.conversation, 'inbound', body)
 
   const result = await classifyAndReply(conversation, body, lead)
   if (!result) {
-    // Claude failed entirely. Persist the inbound so the conversation
-    // log stays accurate, but do not send a reply or a placeholder.
     try {
       const inboundCount = conversation.messages.filter((m) => m.role === 'inbound').length
       await updateConversationColumns(lead.id, {
@@ -360,7 +333,6 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
 
   const { intent, reply: replyText } = result
 
-  // Tag the inbound message with the classified intent now we have it.
   conversation = {
     ...conversation,
     messages: conversation.messages.map((m, i, arr) =>
@@ -368,8 +340,6 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     ),
   }
 
-  // Abandonment — close out, no reply. The reply text from Claude is
-  // discarded; we never message back after abandonment.
   if (intent === 'abandonment') {
     try {
       await updateConversationColumns(lead.id, {
@@ -394,11 +364,9 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     return
   }
 
-  // Send the reply.
   const sendResult = await sendTwilio(phone, replyText)
   if ('error' in sendResult) {
     console.error('[whatsapp/reply] twilio send failed', sendResult.error)
-    // Persist state even if we couldn't send.
     try {
       await updateConversationColumns(lead.id, {
         [COL.waConversation]: serializeConversation(conversation),
@@ -416,7 +384,6 @@ async function processInboundReply(fromPhone: string, body: string): Promise<voi
     conversation = { ...conversation, bookingDetected: true }
   }
 
-  // Final Monday update.
   const inboundCount = conversation.messages.filter((m) => m.role === 'inbound').length
   const updates: Record<string, any> = {
     [COL.waConversation]: serializeConversation(conversation),
@@ -456,17 +423,21 @@ export async function POST(req: NextRequest) {
     console.error('[whatsapp/reply] form parse failed', err)
   }
 
-  // Fire-and-forget the async processing. Twilio needs the 200 fast.
+  // after() guarantees processInboundReply runs to completion after the
+  // response is sent. Unlike fire-and-forget .catch(), Vercel will not
+  // suspend the execution context mid-processing.
   if (fromPhone && body) {
-    processInboundReply(fromPhone, body).catch((err) => {
-      console.error('[whatsapp/reply] processing error', err)
+    after(async () => {
+      await processInboundReply(fromPhone, body).catch((err) => {
+        console.error('[whatsapp/reply] processing error', err)
+      })
     })
   }
 
-  // SMS — no TwiML required. We send the outbound reply via Twilio's REST
-  // API inside processInboundReply, so a plain 200 is enough.
-  return new Response('OK', {
+  // Return empty TwiML — no body text. A plain-text "OK" body causes
+  // Twilio to deliver it as an SMS to the lead, which is the bug.
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
     status: 200,
-    headers: { 'Content-Type': 'text/plain' },
+    headers: { 'Content-Type': 'text/xml' },
   })
 }
