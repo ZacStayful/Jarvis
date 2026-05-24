@@ -18,6 +18,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow voice-pipeline routes hit by Retell, Resend, AssemblyAI, and the
+  // pre-qualifier/presentation pages. None of them carry a session cookie.
+  if (
+    pathname.startsWith("/api/retell") ||
+    pathname.startsWith("/api/monday") ||
+    pathname.startsWith("/api/email") ||
+    pathname.startsWith("/api/qualifier") ||
+    pathname.startsWith("/api/presentation") ||
+    pathname.startsWith("/api/tracking") ||
+    pathname.startsWith("/api/lucy/voice")
+  ) {
+    return NextResponse.next();
+  }
+
   // Allow Next.js internals
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
