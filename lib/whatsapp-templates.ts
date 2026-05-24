@@ -3,7 +3,7 @@
 // historical — the engine was originally built for WhatsApp and the
 // routes still live under /api/whatsapp/.)
 //
-// Voice: Zac from Stayful, UK property owner to UK property owner.
+// Voice: Lucy from Stayful, UK property owner to UK property owner.
 // Specific over generic. One question per message. Name on first
 // contact only, at the start, never repeated and never at the end.
 // SMS is plain text — no markdown, no bullets, no emoji. Read every
@@ -11,7 +11,7 @@
 //
 // Re-engagement rules:
 // - Every no-reply re-engagement must mention short-term letting and
-//   identify as Zac from Stayful — the lead may have forgotten the context.
+//   identify as Lucy from Stayful — the lead may have forgotten the context.
 // - Warm re-engagement (lead has replied before) picks up the thread
 //   from the last thing the lead said — no re-introduction needed.
 // - Never use "Where's your head at" or "Where are you at with this".
@@ -109,7 +109,7 @@ function leadHasReplied(conversation: ConversationState): boolean {
 // ── Initial message ──────────────────────────────────────────────────────────
 
 // Each profile-specific builder returns line 2 + line 3. The greeting
-// line 1 is added by the public entrypoint so the "Hi X, it's Zac from
+// line 1 is added by the public entrypoint so the "Hi X, it's Lucy from
 // Stayful." opener is identical across profiles.
 
 function initialMoveAbroad(lead: LeadProfile): string {
@@ -197,11 +197,11 @@ export function getInitialTemplate(lead: LeadProfile): string {
       .replace(/\{netMonthly\}/gi, fig)
       .replace(/\{surplus\}/gi, lead.monthlySurplus ? gbp(lead.monthlySurplus) : '')
       .trim()
-    if (body) return `Hi ${fn}, it's Zac from Stayful. ${body}`
+    if (body) return `Hi ${fn}, it's Lucy from Stayful. ${body}`
   }
 
   const fn = lead.firstName || extractFirstName(lead.name) || 'there'
-  const greeting = `Hi ${fn}, it's Zac from Stayful.`
+  const greeting = `Hi ${fn}, it's Lucy from Stayful.`
   const body = dispatchByProfile(lead.leadProfile)(lead)
   return `${greeting} ${body}`
 }
@@ -241,17 +241,17 @@ function coldStep1(lead: LeadProfile, conversation: ConversationState): string {
 
 function coldStep2(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `It's Zac from Stayful — just touching base on short-term letting ${addr}. Is the timing right to have a chat, or would a different time work better?`
+  return `It's Lucy from Stayful — just touching base on short-term letting ${addr}. Is the timing right to have a chat, or would a different time work better?`
 }
 
 function coldStep3(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `It's Zac from Stayful — still happy to help with short-term letting ${addr} whenever the time is right. You can grab a slot here if useful: ${calendlyLink()}`
+  return `It's Lucy from Stayful — still happy to help with short-term letting ${addr} whenever the time is right. You can grab a slot here if useful: ${calendlyLink()}`
 }
 
 function coldStep4(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `It's Zac from Stayful — leaving the door open on ${addr} whenever it suits. ${calendlyLink()}`
+  return `It's Lucy from Stayful — leaving the door open on ${addr} whenever it suits. ${calendlyLink()}`
 }
 
 // ── Re-engagement follow-ups ─────────────────────────────────────────────────
@@ -263,20 +263,20 @@ function coldStep4(lead: LeadProfile): string {
 // No need to re-introduce Stayful — they know who we are.
 //
 // NO-REPLY — lead never replied (or hasn't replied in a long time).
-// Every message must identify as Zac from Stayful and mention
+// Every message must identify as Lucy from Stayful and mention
 // short-term letting — the lead may have forgotten the original context.
 
 // Rotating no-reply openers — used in reengStep1 when the lead hasn't replied.
 // Seeded by message count so the same lead always gets a different variant.
 const NO_REPLY_REENG_VARIANTS = [
   (addr: string) =>
-    `It's Zac from Stayful — just touching base to see if you're still interested in short-term letting ${addr}. Happy to help however I can.`,
+    `It's Lucy from Stayful — just touching base to see if you're still interested in short-term letting ${addr}. Happy to help however I can.`,
   (addr: string) =>
-    `It's Zac from Stayful — just checking in on short-term letting ${addr}. How are you feeling about it at the moment?`,
+    `It's Lucy from Stayful — just checking in on short-term letting ${addr}. How are you feeling about it at the moment?`,
   (addr: string) =>
-    `It's Zac from Stayful — hope things are well. Still happy to have a conversation about short-term letting ${addr} whenever the time is right.`,
+    `It's Lucy from Stayful — hope things are well. Still happy to have a conversation about short-term letting ${addr} whenever the time is right.`,
   (addr: string) =>
-    `It's Zac from Stayful — just wanted to check back in on ${addr}. Are you still considering the short-term letting route?`,
+    `It's Lucy from Stayful — just wanted to check back in on ${addr}. Are you still considering the short-term letting route?`,
 ]
 
 function noReplyReengOpener(addr: string, variantIndex: number): string {
@@ -353,7 +353,7 @@ function reengStep3(lead: LeadProfile, conversation: ConversationState): string 
 
   // NO-REPLY — third attempt, rotate variant, add figures if available.
   if (fig) {
-    return `It's Zac from Stayful — just one more touch on ${addr}. Short-term letting net comes in at ${fig} per month. Worth a 20-minute call to see if it stacks up for you?`
+    return `It's Lucy from Stayful — just one more touch on ${addr}. Short-term letting net comes in at ${fig} per month. Worth a 20-minute call to see if it stacks up for you?`
   }
   const outboundCount = conversation?.messages?.filter((m) => m.role === 'outbound').length ?? 2
   return noReplyReengOpener(addr, outboundCount)
@@ -361,7 +361,7 @@ function reengStep3(lead: LeadProfile, conversation: ConversationState): string 
 
 function reengStep4(lead: LeadProfile): string {
   const addr = shortAddress(lead.address) || 'the property'
-  return `It's Zac from Stayful — I'll leave it there for now on short-term letting ${addr}. If you ever want to run the numbers, you can grab a slot here: ${calendlyLink()}`
+  return `It's Lucy from Stayful — I'll leave it there for now on short-term letting ${addr}. If you ever want to run the numbers, you can grab a slot here: ${calendlyLink()}`
 }
 
 // ── Public follow-up entry point ─────────────────────────────────────────────
