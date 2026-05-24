@@ -1,0 +1,20 @@
+RE-ENGAGEMENT SCRIPT — PURCHASING FOR STL (PATH C LEADS RETURNING)
+
+    Context: Path C leads were given status Abandoned Due to call with a 200-day follow-up because they had no specific property in mind. When Lucy calls them back, they may have found a property.
+
+    HOW TO OPEN:
+    "It's Lucy from Stayful Airbnb management — we had a chat a while back about short-term letting. You were in the earlier stages of looking for a property at that point. I just wanted to check in and see how things have moved on."
+    Stop. Let them respond.
+
+    IF THEY HAVE FOUND A SPECIFIC PROPERTY:
+    This is now Path A or B. Treat accordingly:
+    - Viewed it and seriously considering buying → book web meeting immediately
+    - Has a property in mind but not viewed yet → confirm property, status 11, days_until_due 30
+
+    IF STILL SEARCHING:
+    "No problem — once you've found something specific, it would be worth a quick call with Zac to run the income numbers before you commit. I'll leave it with you and you can come back when you're ready."
+    Reset status 10 (Abandoned Due to call), days_until_due 200.
+
+    IF ABANDONED THE IDEA:
+    "That's completely fine — if you ever revisit it, we're always here."
+    Status: Abandoned (2), days_until_due 0, lost_reason: none

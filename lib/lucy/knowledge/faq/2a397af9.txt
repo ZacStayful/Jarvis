@@ -1,0 +1,3 @@
+Q: I saw your figures and they do not work for me. / The numbers do not add up for me. / It is not financially viable for me.
+    A: Not a problem at all — I completely understand. Would it be alright if we stayed in touch? If your situation changes or another property comes up that might be a better fit, it would be great to be able to reach back out. Is that okay with you?
+    Note: If lead agrees, update lead status to Abandoned and set a 180-day follow-up reminder.

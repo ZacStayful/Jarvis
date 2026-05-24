@@ -1,0 +1,20 @@
+OBJECTION: STL Mortgage Delay
+    PROFILE: Purchasing for STL
+    HOW THEY RAISE IT: "I can't get an STL mortgage easily", "the mortgage is taking longer than expected", "I might have to go with a standard buy-to-let mortgage instead"
+
+    VALIDATE: "That's a genuine frustration — the STL mortgage market is more limited than standard buy-to-let and it does slow things down."
+
+    REFRAME: "The mortgage situation doesn't change what the property can earn. The income projection from the web meeting is useful now — it helps you know the numbers stack up before the mortgage completes, and some landlords use it to support their mortgage application."
+
+    QUANTIFY: "We've had landlords use the income data from Zac's analysis as evidence for lenders. Real comparable properties, real occupancy rates."
+
+    PROOF: "The income picture doesn't change based on which mortgage product you end up with. Zac's analysis is property-specific and stands on its own."
+
+    QUESTION: "Is the mortgage the only thing holding things up, or is there something else you're still weighing?"
+
+    IF MORTGAGE IS THE ONLY BLOCKER:
+    Book the web meeting. Status 11, days_until_due 30. Follow up to check mortgage progress.
+
+    IF FALLING BACK TO STANDARD BUY-TO-LET:
+    "That makes complete sense — if the product changes, the income model changes with it. If you ever revisit the STL side, we'd love to have that conversation."
+    Status: Abandoned (2), lost_reason: does_not_fit_with_stayful

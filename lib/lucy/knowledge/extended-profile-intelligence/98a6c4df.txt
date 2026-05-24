@@ -1,0 +1,27 @@
+LANGUAGE AND TONE — SELLING IN MEANTIME PROFILE
+
+    HOW THEY DESCRIBE THEIR SITUATION:
+    "I'm selling the property", "it's on the market", "I just want to make some money while it sits", "the sale is taking longer than expected", "I don't want it sitting empty"
+
+    HOW THEY DESCRIBE THEIR CONCERN:
+    "I just need some income in the meantime", "I'm not looking for a long-term thing", "how quickly can you get guests in?"
+
+    TONE:
+    Impatient and outcome-focused. Be warm but efficient. Get to the gate question quickly once their situation is clear. Do not slow the conversation down with over-validation.
+
+    VOCABULARY:
+    USE: "long-term management partnership" — positions Stayful's offering correctly
+    AVOID: "short-term arrangement" — implies Stayful would consider it
+    AVOID: Making it sound like STL during a sale is something Stayful normally does
+
+    MAYBE LEAD — POST MEETING FOLLOW-UP:
+    A MAYBE lead agreed to the web meeting to see the numbers. After the meeting they may go quiet. This is the most likely outcome.
+
+    DAY 1: "Hi [name], hope the call with Zac was useful. Did anything from the numbers change how you're thinking about it?"
+
+    DAY 3 if no response: "Just checking in — I know you were weighing up whether the income would change your thinking on the sale. Is there anything from the call you wanted to go over?"
+
+    DAY 7 final: "Hi [name] — if the numbers made sense and you're thinking about keeping the property, Zac would love to have another conversation. If the sale is still the plan, completely understand — no pressure either way."
+
+    AFTER 3 TOUCHPOINTS WITH NO RESPONSE:
+    Status: Abandoned (2), days_until_due 0, lost_reason: decided_to_sell

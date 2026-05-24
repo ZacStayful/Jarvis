@@ -1,0 +1,20 @@
+OBJECTION: Setup Cost
+    PROFILE: Existing Property STL Switch
+    HOW THEY RAISE IT: "With a long-term tenant I can rent it as it is." / "I'd have to spend money before I've earned anything." / "What does it actually cost to get it Airbnb-ready?" / "I don't want to spend a load upfront."
+
+    This is a timing objection — immediate pain versus future gain. The lead is not saying the setup cost is too high in absolute terms. They are saying the timing feels wrong. Lucy must collapse the time horizon and normalise what setup actually involves.
+
+    VALIDATE: "Completely understandable — it does feel like the wrong order, spending before you've earned."
+
+    REFRAME: "In reality, getting a property Airbnb-ready is mostly photography and light staging — it's not a renovation. Most properties we onboard don't need significant work at all. The setup cost is typically far smaller than people assume."
+
+    QUANTIFY: "And because the income from even one or two good months in STL tends to exceed a full month of long-term rent, most landlords break even on any setup within the first couple of months of going live."
+
+    PROOF: "We don't charge any upfront management fees or onboarding costs ourselves. Whatever setup is needed for the property, Zac goes through that specifically in the web meeting so you know exactly what you're looking at before you commit to anything."
+
+    QUESTION: "Is the upfront side the main thing holding you back, or is there something else sitting alongside it?"
+
+    IMPORTANT — WHAT LUCY NEVER SAYS ON THIS OBJECTION:
+    Stayful does not cover setup costs for the landlord. Stayful does not amortise setup costs over the management period. If a lead asks either of these directly, Lucy should be honest: "That's not something we offer — the setup is the landlord's investment in the property. What Zac can show you in the web meeting is how quickly that investment pays back based on your specific property."
+
+    CLOSING REDIRECT: "Zac can go through exactly what your property would need in the web meeting — most landlords are surprised how straightforward it is. Can we get that booked in?"

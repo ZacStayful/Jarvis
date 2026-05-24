@@ -1,0 +1,37 @@
+PURCHASE LEAD OBJECTIONS — HANDLING GUIDE
+
+    Apply the VALIDATE > REFRAME > QUANTIFY > PROOF > QUESTION framework to every objection. Never skip validation. Never lead with the counter-argument.
+
+    OBJECTION 1: "I don't know enough about STL to make this decision"
+    VALIDATE: "That's completely fair — buying a property for a strategy you haven't run before is a different kind of decision to a straightforward buy-to-let."
+    REFRAME: "But actually, that's exactly why buying for STL from scratch can be smarter — you're not retrofitting a property someone bought for something else. You get to choose the right property for the strategy from the start."
+    QUANTIFY: "A two-bed in a Leeds city centre street generates on average between sixteen hundred and three thousand a month — that's real data from comparable properties we manage."
+    PROOF: "We've onboarded several landlords who had never done STL before. The setup takes two to three weeks and after that we handle everything operationally."
+    QUESTION: "If you knew the income floor — the worst month on that property — would that give you enough to make the decision?"
+
+    OBJECTION 2: "I was going to use a standard buy-to-let mortgage — will that work?"
+    This is a legitimate practical blocker. Do not dismiss it.
+    VALIDATE: "Yes, that's an important one — most standard buy-to-let mortgages do restrict short-term letting, so you'd typically need a holiday let or short-term let specific mortgage product. The rates are comparable to BTL but the lenders are fewer. This is worth checking with a broker before you commit to a property."
+    REFRAME: "The upside is that holiday let mortgages qualify for furnished holiday let tax treatment, which can be more efficient than standard buy-to-let from a tax perspective — so there can actually be an advantage to going the specialist route."
+    QUESTION: "Have you spoken to a broker yet, or is that still to come?"
+
+    OBJECTION 3: "I was thinking of investing near where I live — is that a good area for STL?"
+    Home-bias is real and valid. Do not dismiss the preference — validate it first, then test it with data.
+    VALIDATE: "Being close to the property is really useful in the early days — completely understand that."
+    REFRAME: "What I'd want to check is whether [their area] has the demand to make STL work as well as somewhere like Leeds or Leicester would — because that's ultimately what drives your income, not the distance from you."
+    QUESTION: "Can I ask — what does [their area] have in terms of reasons people would stay there overnight? Tourism, business, events, a university, hospital?" Then assess and respond based on the answer.
+    If the area is weak for STL: acknowledge that honestly, then present Leeds or Leicestershire as a managed alternative with real data.
+
+    OBJECTION 4: "The numbers don't seem much better than a long-term tenant when I factor in management fees and voids"
+    VALIDATE: "That's worth working through properly because on paper it can look closer than it is."
+    REFRAME: "The comparison that matters isn't average versus average — it's your floor against their certainty. The question is: what's the worst month we'd deliver, and how does that compare to your long-term option?"
+    QUANTIFY: "Our quietest month on a two-bed in Leeds last year was [figure]. What are you expecting from a long-term tenant after the agent's fee? Because that gap is your real downside, and it's usually smaller than people think."
+    PROOF: Reference actual Stayful portfolio floor figures where available.
+    QUESTION: "If our worst month still beats their best month, does that change the conversation?"
+
+    OBJECTION 5: "I'm worried about the property getting damaged by short-term guests"
+    VALIDATE: "That's one of the most common concerns we hear, and it's reasonable."
+    REFRAME: "In practice, the damage risk for STL is actually lower than long-term tenants in most cases — guests are vetted through platforms with ID verification and deposit protection, and any damage is reported immediately rather than discovered at the end of a 12-month tenancy."
+    PROOF: "We've never had a case where a landlord in our portfolio was out of pocket after a guest incident — the platform protections and our own processes cover it."
+    QUESTION: "Is it the financial risk you're concerned about, or more the general uncertainty of having different people through?"
+    Then address whichever the lead confirms.

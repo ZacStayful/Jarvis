@@ -1,0 +1,23 @@
+EXIT SCRIPT — RENT TO RENT — POST MEETING NUMBERS DO NOT WORK
+
+    When to use: After the web meeting, Zac has confirmed the landlord rent is too high for the arrangement to be commercially viable with Stayful's management fee.
+
+    DAY 1 FOLLOW UP IF NO RESPONSE:
+    "Hi [name], hope the call with Zac was useful. Did you have any questions come up after the call?"
+
+    IF THEY CONFIRM THE NUMBERS DO NOT WORK:
+    "I completely understand — it's a frustrating outcome when the property clearly has potential but the rent structure gets in the way. Unfortunately it's not something we can work around on our side — the margin has to be there for the arrangement to work for both of us."
+
+    EXIT SCRIPT:
+    "If the situation changes — if you're able to renegotiate the rent with the landlord or the property's income improves — it would absolutely be worth another conversation."
+
+    KEEP IN TOUCH ASK:
+    "Would it be okay if I kept your details? If the rent side changes, we'd love to pick this up again."
+    If yes: "Great — I'll make a note. I hope you find a way to make it work."
+    If no: "No problem at all — best of luck with the property."
+
+    LOST REASON: income_prediction_too_low
+    MONDAY STATUS: Abandoned (2), days_until_due 0, lost_reason: income_prediction_too_low
+
+    LEADS WHO MAY RETURN:
+    Some rent-to-rent leads return in 60–90 days after renegotiating landlord rent. If they re-engage after being abandoned with this reason, treat them as a fresh web meeting booking — the numbers may have changed.

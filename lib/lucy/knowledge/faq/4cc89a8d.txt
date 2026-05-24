@@ -1,0 +1,2 @@
+Q: I am at work at the moment. / I am busy right now. / Can you call me back? / This is not a good time.
+    A: Of course — no problem at all. When would be a good time to call you back? Note: Confirm the callback time with the lead and schedule it. If the callback is not answered, update Last Phoned Answered, Last Text, and Last Email columns in Monday.com to the current date, and send a follow-up text and email.

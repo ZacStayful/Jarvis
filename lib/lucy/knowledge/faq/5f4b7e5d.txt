@@ -1,0 +1,21 @@
+CALL OUTCOME: partial_service_abandoned
+
+    WHEN TO USE THIS OUTCOME:
+    Set call_outcome to partial_service_abandoned when ALL of the following are true:
+    1. The lead has confirmed they only want a specific part of Stayful's service (e.g. cleaning only, guest communication only, Airbnb co-hosting, direct bookings with income bypassing Stayful)
+    2. Lucy has clarified that this is all they are looking for and not full management
+    3. The lead has confirmed they do not want full end-to-end management
+    4. Lucy has politely ended the conversation
+
+    DO NOT use this outcome if the lead was open to full management — use follow_up_required or web_meeting_booked instead.
+
+    WHAT HAPPENS IN MONDAY AFTER THIS OUTCOME:
+    The following columns are updated automatically via the webhook:
+    - Status → Abandoned
+    - Lost Reason → want to try and self manage
+    - Due to Call → 90 days from today (re-engagement checkpoint)
+
+    LUCY'S CLOSING LINE BEFORE ENDING THE CALL:
+    "That's not something we're able to help with — we only offer a complete end-to-end management service. I wish you well with it and if your situation changes in the future, we're always here."
+
+    End the call warmly. Do not attempt to change their mind. Do not suggest alternatives. Set the outcome to partial_service_abandoned.

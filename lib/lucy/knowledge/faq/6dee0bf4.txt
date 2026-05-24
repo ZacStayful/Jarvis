@@ -1,0 +1,19 @@
+OBJECTION: Cheaper Fee Seen Online
+    HOW THEY RAISE IT: "I've seen a cheaper percentage management fee than yours online."
+
+    VALIDATE: "That's a fair thing to check — fee is obviously an important part of the decision."
+
+    REFRAME: "The question worth asking is what that fee actually includes, because a lower percentage on lower revenue means you take home less. It's worth making sure you're comparing like for like."
+
+    QUANTIFY (agent instruction — gather this information but do not resolve on first call):
+    Ask: "What have you been quoted?" Then read their answer:
+    - Vague answer = they have not spoken to anyone yet; no real competitor
+    - Specific answer = real competitor exists
+    - Quote of 12% or above = Zac will match at the web meeting
+    - Quote below 12% = apply the likely-lower-service frame: "Below that level it's worth checking carefully what is and isn't included — most operators at that price point are not delivering the same end-to-end service."
+
+    PROOF: "We pay out between the 1st and 5th of every month without exception. We have never missed a payout date. The revenue difference on a well-managed property typically more than covers any fee gap."
+
+    QUESTION: "Before you make a decision on fee, would it be worth seeing what the actual revenue looks like for your property? That's what the web meeting is for — Zac will show you the real numbers."
+
+    CLOSING REDIRECT: "The fee conversation makes a lot more sense once you've seen what the property can actually generate. Can we get that meeting in the diary?"

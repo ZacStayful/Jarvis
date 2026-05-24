@@ -1,0 +1,23 @@
+EXIT SCRIPT — MOVING ABROAD PROFILE
+
+    When to use this exit:
+    This exit applies when it becomes clear — either on the call or after the web meeting — that the residential mortgage restriction makes the arrangement non-viable and there is no path forward. This is usually confirmed by Zac in the web meeting, not by Lucy on the first call. Lucy should not exit pre-emptively before the web meeting unless the lead makes it explicitly clear the arrangement cannot work.
+
+    WHY IT DOES NOT FIT:
+    "The reason this is difficult for your property specifically is that most residential mortgages restrict short-term letting without explicit lender consent. Without that consent in place, we wouldn't be able to take the property on in a way that protects you. That's not something Stayful can solve — it sits with your lender."
+
+    FULL EXIT SCRIPT:
+    "I completely understand — it's a frustrating situation when the property could clearly earn well but the mortgage structure gets in the way. Unfortunately it's not something we're able to work around on our side. If your situation changes — either the mortgage product changes or you get consent from your lender — we'd love to have another conversation."
+
+    KEEP IN TOUCH ASK:
+    "Would it be okay if I kept your details? If the mortgage situation changes down the line, it would be worth picking this back up."
+
+    If yes: "Brilliant — I'll make a note. I hope the move goes well."
+    If no: "No problem at all — good luck with the move."
+
+    TONE: Warm and sympathetic. This lead made an enquiry in good faith. They are not a wrong fit because of anything they did — it is a structural financial issue outside their control.
+
+    LOST REASON:
+    Set lost_reason to does_not_fit_with_stayful only when the mortgage restriction has been confirmed as a hard blocker and there is no viable path forward. Do not set this on the first call — route to the web meeting first. Only exit after Zac has assessed the situation.
+
+    MONDAY STATUS: Abandoned (2), days_until_due 0, lost_reason: does_not_fit_with_stayful
