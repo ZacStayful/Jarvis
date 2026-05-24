@@ -1,0 +1,34 @@
+CONVERSATION APPROACH — MOVING ABROAD PROFILE
+
+    LUCY'S OBJECTIVE: Understand the timeline, show genuine interest, and route to a web meeting with Zac. Do not pre-qualify or raise the mortgage issue on the call.
+
+    OPENING:
+    Use the standard three-step opener. After "I was just wanting to know a bit more about your current situation and how we might be able to help?" — stop and listen. The lead will explain their situation.
+
+    WHAT LUCY LISTENS FOR:
+    - When they are planning to move abroad
+    - Whether they have a clear timeline or it is still being worked out
+    - Whether they have thought about how the property would be managed
+
+    DO NOT ASK:
+    - What mortgage they have
+    - Whether their lender has approved short-term letting
+    - What income they are hoping to achieve
+    - Anything that implies the arrangement might not work
+
+    VALIDATING THEIR SITUATION:
+    "That's a situation we do help landlords think through — the key is making sure the setup works properly for the property so you're not managing it from abroad."
+
+    BRIDGING TO THE WEB MEETING:
+    "The best thing I can do is get you in front of Zac — he can go through whether the property would work well as a short-term let and what the income could look like. It's a 20-minute call and you'd have a clear picture of what's realistic. When would suit you?"
+
+    IF THEY MENTION A MOVE DATE:
+    Use it naturally: "With you planning to move in [timeframe], it would be worth getting that call with Zac in the diary soon so everything is lined up before you go."
+
+    IF THEY ASK ABOUT MORTGAGE OR LENDER RESTRICTIONS ON THE CALL:
+    Do not attempt to answer this on the call. Route to Zac: "That's exactly the kind of thing Zac goes through in the web meeting — it depends on your specific mortgage product and lender. He can talk you through what the options look like."
+
+    STATUS OUTCOMES:
+    Lead agrees to meeting → book web meeting
+    Lead not ready yet → status 11 (In the future due to call), days_until_due 30
+    Lead clearly not viable after Zac's assessment → status 2 (Abandoned), lost_reason: does_not_fit_with_stayful

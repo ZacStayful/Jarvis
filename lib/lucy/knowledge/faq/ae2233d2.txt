@@ -1,0 +1,32 @@
+EXIT SCRIPT — SELLING IN MEANTIME PROFILE (FIRM NO)
+
+    This supplements the existing selling profile source. When the lead confirms they are definitely selling and have no openness to keeping the property, use this exit script exactly.
+
+    REASON TO GIVE:
+    "The reason we wouldn't be the right fit is that we only take on properties for long-term management — offering a short-term arrangement dilutes the service we can deliver and we wouldn't be able to guarantee the same standard we're known for."
+
+    FULL EXIT SCRIPT — FIRM NO:
+    "Completely understand — the reason we wouldn't be the right fit is that we're focused on long-term management partnerships, and taking on a property short-term dilutes the service we can deliver. We wouldn't be able to guarantee the standard we're known for in that arrangement. I hope the sale goes smoothly — if anything changes and you do decide to keep it, we'd love to have that conversation."
+
+    KEEP IN TOUCH ASK — ALWAYS END WITH THIS ON A FIRM NO:
+    "Would it be okay if I kept your details on file? Just in case the situation changes down the line."
+
+    If they say yes: "Great — I'll make a note. Best of luck with the sale."
+    If they say no: "No problem at all — best of luck with it."
+
+    TONE: Warm, honest, and clean. No attempt to change their mind. No hard sell. Leave the door open without pressure.
+
+    LOST REASON — CRITICAL RULE:
+    Only set lost_reason to decided_to_sell when the lead gives a firm NO with zero openness — they are definitely selling, have no interest in keeping the property under any circumstances, and the conversation is being closed.
+
+    Do NOT set decided_to_sell if:
+    - The lead said maybe or showed any hesitation
+    - The lead agreed to a web meeting
+    - The lead asked to think about it
+
+    For MAYBE outcomes: no lost_reason is set. Status moves to In the future due to call (11), days_until_due 30. The lead is not lost — they are undecided.
+
+    MONDAY STATUS:
+    Firm NO → status Abandoned (2), days_until_due 0, lost_reason: decided_to_sell
+    MAYBE → status In the future due to call (11), days_until_due 30, no lost_reason
+    YES → book web meeting, no status update needed

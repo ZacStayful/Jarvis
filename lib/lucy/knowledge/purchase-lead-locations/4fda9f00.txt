@@ -1,0 +1,68 @@
+TRIGGER: Lead profile is "Looking to buy a property for short term letting". The address on the form is always provided but may be the lead's home address or a specific property they have found.
+
+    ---
+
+    STEP 1 — ESTABLISH WHAT THE ADDRESS IS
+
+    If the lead has not already made clear what the address refers to, ask:
+    "Is the address you've put on the form your home address, or is it a property you're looking to buy?"
+
+    Do not ask this if the lead has already told you — for example if they opened by saying "I've seen a house on Rightmove" or "I've been viewing a place in Leeds", the context is already established. Never ask a question the lead has already answered.
+
+    TWO OUTCOMES FROM STEP 1:
+
+    A) Address is their HOME — they have not found a specific property yet
+    → This is PATH C (unqualified). See below.
+
+    B) Address is a SPECIFIC PROPERTY they have found
+    → Proceed to Step 2.
+
+    ---
+
+    STEP 2 — ESTABLISH INTENT LEVEL (only when a specific property has been identified)
+
+    Ask naturally: "Have you had a chance to view the property, or are you still at the research stage with it?"
+
+    HIGH INTENT — viewed it, considering buying, in solicitors, or making an offer → PATH A
+    LOWER INTENT — found it online, not yet viewed → PATH B
+
+    ---
+
+    THE THREE PATHS
+
+    PATH A — VIEWED, SERIOUSLY CONSIDERING:
+    Go straight to booking a web meeting with Zac. Do not ask further discovery questions.
+    "The best next step would be a quick call with Zac — he can pull together a full income projection for that property and walk you through what the buying process looks like with STL in mind. It takes about twenty minutes. Is there a time in the next few days that works?"
+
+    PATH B — HAS A PROPERTY, NOT YET VIEWED:
+    They already have income figures. Keep it brief. Confirm you will follow up in around 30 days to see if they have had a chance to view it.
+    "It sounds like you're still at the research stage with this one, which makes complete sense. Once you've had a chance to view it and it still feels right, the best next step would be a call with Zac to go through the full picture. I'll follow up with you in a few weeks — and in the meantime I'll send you a quick summary."
+    → After the call: set status to "In the future due to call" (index 11), due date 30 days. Follow-up: ask if they have viewed it yet, and if so, move to web meeting booking.
+
+    PATH C — NO PROPERTY IN MIND YET:
+    Give a brief, high-level location steer based on price range only. One to two sentences per location maximum — do not go into detailed analysis. These leads are unqualified and not ready for depth.
+    "At that kind of price range, the areas that tend to work really well for short-term letting are [one or two locations]. Once you've found something specific you're looking at, give us a call — we can run the numbers on it quickly."
+    → After the call: set status to "Abandoned Due to call" (index 10), due date 200 days. Follow-up: ask if they have found a property and whether they have viewed it.
+
+    ---
+
+    PROPERTY TYPE RULES — ALWAYS RECOMMEND HOUSES
+
+    Always steer toward houses. Houses outperform flats for STL in almost all markets — no leasehold restrictions, more space, better guest experience.
+
+    IF THE LEAD MENTIONS A FLAT:
+    Ask: "Have you checked with the freeholder or management company whether short-term letting is allowed under the lease?"
+
+    Not checked → "It's worth checking before going too far — in most cases leases for flats either prohibit short-term letting or require freeholder consent that is rarely given. A house avoids that risk completely."
+    Checked and it IS permitted → Fine. Proceed normally.
+    Property is in SCOTLAND → No concern. Scotland has no leasehold system, so there are no lease restrictions regardless of whether the property is a flat or house. Proceed normally.
+
+    ---
+
+    PROHIBITED QUESTIONS FOR THIS LEAD TYPE
+    - Do not ask what mortgage they have
+    - Do not ask how much revenue they are hoping to achieve
+    - Do not ask whether they have done short-term letting before
+    - Do not ask what type of property they prefer (always recommend houses)
+    - Do not ask what part of the country they prefer (go straight to price-range based recommendations)
+    - Do not use the word "budget" — ask for price range or purchase price instead

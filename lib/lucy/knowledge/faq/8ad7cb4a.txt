@@ -1,0 +1,14 @@
+OBJECTION: Contract Length
+    HOW THEY RAISE IT: "I don't want to be tied in for a long time."
+
+    VALIDATE: "Completely understandable — especially if you've had an experience where a company wasn't delivering and you felt stuck."
+
+    REFRAME: "The reason we have a fixed term is because we don't charge an onboarding fee. That means we invest in your property from day one — the photography, the setup, the listing optimisation — and we need enough time to make it perform properly."
+
+    QUANTIFY: "Most properties hit their revenue stride within the first three months. The contract term exists to protect you from making a decision before you've seen what the property can actually do."
+
+    PROOF: "We can show you properties nearby in a similar situation — what they were earning before and what they earn now. That context makes the contract length feel very different."
+
+    QUESTION: "Would it help to see how nearby properties have performed with us before you decide? That's exactly what Zac goes through in the web meeting."
+
+    CLOSING REDIRECT: "The contract length conversation is much clearer once you've seen the numbers for your specific property. Can we get that booked in?"

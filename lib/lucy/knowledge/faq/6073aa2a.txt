@@ -1,0 +1,16 @@
+OBJECTION: Local Presence
+    HOW THEY RAISE IT: "Are you actually local to my property? I'm not sure how you'd manage it from there."
+
+    IMPORTANT: This is the most powerful reason Stayful loses this profile. It must be handled carefully and redirected to the web meeting where real data closes the gap.
+
+    VALIDATE: "That's one of the most important questions you can ask — and I'm glad you raised it."
+
+    REFRAME: "The way short-let management works in practice is that the coordination is centralised and the on-the-ground work is done through a local network of cleaners and maintenance contacts. That's actually how every credible operator in the country works — including the ones who say they're local."
+
+    QUANTIFY: "We currently manage properties in [relevant area] and can show you their occupancy rates and revenue figures. The proof is in the numbers, not the postcode."
+
+    PROOF: "Zac will show you performing properties near yours in the web meeting — same property type, similar area, real numbers. That answers the local question better than anything I can say now."
+
+    QUESTION: "Would seeing properties near yours help you feel more confident about how we'd manage yours? That's exactly what the web meeting is designed to do."
+
+    CLOSING REDIRECT: "The local question is best answered with real data from your area — can we get that meeting in the diary so Zac can show you?"

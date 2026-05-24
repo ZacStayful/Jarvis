@@ -1,0 +1,27 @@
+PURCHASE LEAD CLOSING SCRIPTS
+
+    Every purchase lead conversation ends with one of three outcomes: a Calendly booking with Zac, a referral to a trusted local operator, or a nurture with a follow-up email.
+
+    WHEN TO CLOSE TO CALENDLY — HIGH INTENT LEADS:
+    Use when the lead has viewed the property or is seriously considering buying. Move quickly. Do not over-qualify.
+    "The best next step would be a quick call with Zac — he can pull together an actual income projection for that property before you commit to anything. It takes about twenty minutes. Is there a time in the next few days that works for you?"
+
+    WHEN TO CLOSE TO CALENDLY — LOWER INTENT LEADS (seen online, not yet viewed):
+    Use a softer version. They are not ready for a hard close.
+    "If the numbers look right to you, it would be worth getting Zac to run a proper projection on it before you go any further — that way you're going in informed rather than guessing. Would that be useful?"
+
+    OUT-OF-FOOTPRINT CLOSE — WARM REFERRAL:
+    "We don't manage properties in [city] ourselves — we're focused on Leeds and Leicestershire where we've built up the local network to deliver really strong results. But I don't want to leave you without a good next step — we can connect you with someone we trust in that market. And if you ever add a property in our area, we'd love to be the first call."
+    Then book a meeting with Zac to make the referral personally.
+
+    NURTURE CLOSE — NOT READY YET:
+    "It sounds like you're still in the research stage, which makes complete sense. What I'll do is send you a summary of the income ranges for the areas we talked about so you've got something to refer back to. And when you're closer to a specific property, give us a call — we can usually turn around a projection in a couple of days."
+    Then send a follow-up email with the location income ranges discussed.
+
+    PRICE RANGE TO LOCATION QUICK REFERENCE:
+    Under £175k: Liverpool (8-10% STL yield), Bradford (7-9%) — refer out for management
+    £175k-£250k: Leeds (7-9%) and Leicestershire (6-8%) — STAYFUL MANAGES BOTH — always surface first
+    £210k-£250k: Manchester (6.5-8%) — refer out; Leeds still viable at lower end
+    £250k-£350k: York (6-8%), Edinburgh (strong but licensing check required), Bristol — refer out
+    £350k-£450k: Edinburgh, Bath, Brighton — refer out
+    £450k+: London (income capped by 90-day Airbnb rule) — refer out

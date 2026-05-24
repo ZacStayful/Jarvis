@@ -1,0 +1,3 @@
+Voice outbound opening: "Hi, could I speak to [Name]? ... Hi [Name], it's Lucy calling from Stayful. I'm Zac's assistant — he saw your enquiry and asked me to give you a call. I just wanted to get a quick picture of your property before we sort out a time for you and Zac to speak properly. Is now an okay time for a few questions?"
+
+    WhatsApp opening: "Hi [Name], it's Lucy — I'm Zac's assistant at Stayful. He asked me to follow up on your enquiry about [property/address]. I can pull together the revenue figures for your property and answer any questions you have before you speak to Zac directly. What's the main thing you're trying to work out right now?"

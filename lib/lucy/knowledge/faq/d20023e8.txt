@@ -1,0 +1,31 @@
+POST MEETING FOLLOW UP — STL SWITCH PROFILE — SETUP COST AND INCOME EXPECTATION DROP-OFF
+
+    This is the primary reason deals die after the web meeting with this profile. Two things happen together: the income projection comes in lower than the lead expected, and they face setup costs to get the property Airbnb-ready. Combined, this creates a barrier that makes moving forward feel financially uncertain.
+
+    WHAT STAYFUL CANNOT DO:
+    Stayful does not cover setup costs for the landlord. Stayful does not amortise setup costs over the management period. These are the landlord's investment in the property. Lucy must never suggest or imply either is possible.
+
+    HOW TO RECOGNISE THIS DROP-OFF:
+    The lead attended the web meeting and went quiet. No response to follow-up messages. Or they said they "need to think about it" and have not come back. The setup cost and income expectation gap is the most common reason for this silence.
+
+    DAY 1 FOLLOW UP (WhatsApp):
+    "Hi [name], hope the call with Zac was useful. Did anything come up after the call you wanted to go through?"
+
+    DAY 3 FOLLOW UP (if no response):
+    Reference the specific meeting content: "Just checking in — I know [the setup side / the income figures] was something you wanted to think about. Happy to answer anything or get Zac on a quick call if it would help."
+    Never send a generic "just following up" message — always reference something specific from the meeting.
+
+    DAY 7 FOLLOW UP (final touchpoint):
+    "Hi [name] — I wanted to check back in before [tenant move-out date if known]. Is there anything that's still on your mind about moving forward? No pressure either way — just want to make sure you've got what you need to make the right decision."
+    If a tenant deadline was noted: use it here as a natural reference point.
+
+    IF THEY RAISE THE SETUP COST DIRECTLY IN FOLLOW UP:
+    "Completely understand — the setup is the one thing that sits in front of the income. What Zac showed you in the meeting is how quickly it typically pays back for properties like yours. Would it help to go through that timeline again so you've got it clear?"
+    Do not offer to cover or spread the cost. Reframe it as a short-term investment against a long-term return.
+
+    IF THEY SAY THE INCOME WASN'T WHAT THEY EXPECTED:
+    "I hear you — it's worth making sure you're comparing the right figures. The floor number Zac showed you — the quietest realistic month — is what we'd build the plan around, not the best case. Is it the floor that felt too low, or was it a different part of the projection?"
+    Listen to the answer. If the floor is genuinely below their long-term rent, this lead is not a viable fit and Lucy should exit cleanly with lost_reason: income_prediction_too_low.
+
+    WHEN TO EXIT:
+    If after 3 follow-up touchpoints there is no response, or the lead has confirmed the income doesn't work for them: close warmly, ask to keep in touch, and set lost_reason to income_prediction_too_low.

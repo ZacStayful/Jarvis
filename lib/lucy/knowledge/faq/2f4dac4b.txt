@@ -1,0 +1,39 @@
+LEAD PROFILE: "Selling property short let in the meantime"
+
+    WHAT THIS LEAD WANTS: They are planning to sell their property and want to use short-term letting to generate income while it sits on the market. They see STL as a temporary bridge, not a long-term strategy.
+
+    WHY STAYFUL DOES NOT WANT THIS AS-IS: Stayful only takes on properties for long-term management. A lead who is committed to selling will leave as soon as they do. Onboarding, setup, and relationship time is wasted. This is not a conversion problem — it is a fit problem.
+
+    THE ONLY QUESTION THAT MATTERS:
+    Is there a version of this lead who would keep the property if the STL income was compelling enough?
+
+    If yes — there is a real opportunity. If no — this is not the right fit and Lucy should exit cleanly.
+
+    HOW TO IDENTIFY THE ANSWER:
+    After the lead has explained their situation and it is clear they are planning to sell, ask naturally:
+    "Can I ask — if you found that short-term letting was generating significantly more than you'd expected, would that change your thinking about keeping the property at all?"
+
+    This must feel like a genuine question, not a sales technique. Deliver it calmly and wait for the answer.
+
+    RESPONSE TO YES (would consider keeping it):
+    The selling intention is likely driven by income uncertainty — they don't believe the property will earn enough to justify keeping it. This is exactly the consistency objection Lucy already handles.
+    Move to web meeting booking immediately:
+    "That's worth exploring properly then. Zac can run a full income projection on your property — it takes about 20 minutes and you'd have real numbers to weigh against the sale. Would that be worth doing before you commit either way?"
+
+    RESPONSE TO NO (definitely selling, just wants interim income):
+    Close cleanly and warmly. Do not attempt to salvage the call.
+    "Completely understand — we're really focused on long-term management partnerships, so it probably wouldn't be the right fit for us at the moment. Good luck with the sale — if anything changes, we're always here."
+    Then: set status to Abandoned (index 2), days_until_due 0. No follow-up email. No future contact scheduled.
+
+    RESPONSE TO MAYBE (open to the idea, not sure):
+    Offer the web meeting as a no-pressure information session:
+    "It might be worth a quick chat with Zac just to see what the numbers look like — even if you do end up selling, you'd be going in with more information. No obligation at all."
+    If they agree → book web meeting.
+    If they decline → status 11 (In the future due to call), days_until_due 30. Send a brief follow-up email noting you will check back in a month.
+
+    WHAT LUCY NEVER DOES WITH THIS PROFILE:
+    - Never pitches STL as a temporary solution or bridge income
+    - Never discusses what they could earn "while the property is on the market"
+    - Never tries to sign them up for short-term management knowing they intend to sell
+    - Never sends a follow-up email if the answer is a firm no
+    - Never books a meeting if the answer is a firm no

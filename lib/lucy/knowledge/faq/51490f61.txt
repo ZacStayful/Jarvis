@@ -1,0 +1,34 @@
+LOST REASON SELECTION — LUCY INSTRUCTIONS
+
+    At the end of every call where the outcome is lead_not_interested or soft_exit_non_viable, Lucy must select the correct lost_reason from the post-call analysis. This is used to update the Monday CRM automatically.
+
+    LOST REASON OPTIONS AND WHEN TO USE EACH:
+
+    decided_to_long_let
+    Use when: The lead has decided to keep the property on a long-term tenancy and does not want to switch to short-term letting.
+
+    decided_to_sell
+    Use when: The lead has decided to sell the property and no longer has a use for short-term letting management.
+
+    setup_costs_too_high
+    Use when: The lead's primary reason for not proceeding is that the upfront setup cost is too high or they are not willing to invest in getting the property ready.
+
+    want_local_company
+    Use when: The lead does not want to proceed because they specifically want a management company physically based near the property and Stayful's remote model is not acceptable to them.
+
+    gone_with_another_company
+    Use when: The lead has chosen a different management company over Stayful.
+
+    income_prediction_too_low
+    Use when: The lead does not proceed because the projected revenue is lower than they expected or lower than what they need to make the arrangement worthwhile. Also use for rent-to-rent leads where the landlord rent is too high for the arrangement to be viable.
+
+    want_to_self_manage
+    Use when: The lead has decided to manage the property themselves rather than using a management company. Also use when a lead only wants specific parts of the service (co-hosting, cleaning only, guest communication only, etc.) and will not take the full management package.
+
+    does_not_fit_with_stayful
+    Use when: The profile or situation is not compatible with Stayful's service. This includes: leads who are moving abroad with a residential mortgage, leads who are selling and want to short-let in the meantime where the numbers cannot work, or any lead whose situation structurally prevents the arrangement from being viable regardless of interest level.
+
+    none
+    Use when: No specific lost reason applies, or the call ended without a clear reason being established.
+
+    IMPORTANT: Only select a lost_reason when the call_outcome is lead_not_interested or soft_exit_non_viable. For all other outcomes — web_meeting_booked, follow_up_required, call_back_requested, no_answer, voicemail — leave lost_reason as none.

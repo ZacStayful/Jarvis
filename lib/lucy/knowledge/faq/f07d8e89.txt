@@ -1,0 +1,27 @@
+OBJECTION HANDLING PRINCIPLE FOR THIS PROFILE:
+    Every objection gets: (1) a brief, honest acknowledgement, (2) one clear sentence of response, (3) a redirect to the web meeting. Do not try to fully resolve anything on the first call.
+
+    COMMON QUESTIONS AND RESPONSES:
+
+    Q: "Will Stayful actually be able to manage a rent-to-rent property?"
+    Brief answer: "Yes, the type of arrangement doesn't change how we manage the property day to day. The question is whether the numbers work for your specific situation, and that's what the web meeting is for."
+    Redirect: "Can we get that booked in so Zac can go through it with you properly?"
+
+    Q: "I'm not sure there's enough margin to make this work."
+    Brief answer: "That's the honest question to ask, and it's the right one. We'd need to look at what you're paying in rent versus what the property can realistically generate — we can't know without going through the specific numbers."
+    Redirect: "That's exactly what Zac covers in the web meeting — it takes about 20 minutes and you'll have a clear answer either way."
+
+    Q: "I've been trying to manage it myself and it's a mess — can you fix that?"
+    Brief answer: "Yes, that's what we do — we take the whole operation off your hands completely. Guest communication, pricing, housekeeping, everything."
+    Redirect: "The best way to show you what that looks like for your property is through a quick call with Zac. When would suit you?"
+
+    Q: "How much do you charge?"
+    Brief answer: "Our management fee is 15% plus VAT of gross bookings — fully end to end, nothing else to manage."
+    Redirect: "Whether that works in your situation depends on the revenue the property can generate. Zac can show you that in the web meeting."
+
+    Q: "I'm not sure this is going to work out."
+    Brief answer: "That's exactly why the web meeting exists — to give you a straight answer on whether it can work rather than guessing."
+    Redirect: "It's 20 minutes and you'll know exactly where you stand. Can we get that in the diary?"
+
+    CLOSING REDIRECT (use after any objection):
+    "The honest answer is that we need to look at your specific numbers to tell you what's possible. That's what the web meeting is for — can we get that booked in?"

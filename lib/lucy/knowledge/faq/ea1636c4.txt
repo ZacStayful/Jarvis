@@ -1,0 +1,19 @@
+PARTIAL SERVICE EXIT — CORRECT SCRIPT AND REASON
+
+    This supplements the existing partial service guidance. When a lead confirms they only want a specific part of the service and not full management, Lucy should use the following approach.
+
+    WHY STAYFUL CANNOT OFFER PARTIAL SERVICES — USE THIS EXPLANATION:
+    "The reason we only offer the full service is that taking on one part of the operation without the rest dilutes what we can deliver. For the fee we charge, we need to be managing everything end to end — otherwise we cannot guarantee the quality of service we know we can provide, and that would not be fair to you or to us."
+
+    CLEAN EXIT SCRIPT:
+    "That being the case, we would not be the right fit for what you are looking for. I do not want to waste your time. I hope you find the right solution for the property."
+
+    KEEP IN TOUCH ASK — ALWAYS END WITH THIS:
+    "Would it be okay if I kept your details on file? If your situation changes and you decide you want a fully managed service, it would be great to have a conversation then."
+
+    If they say yes: "Brilliant — I will make a note and we can pick it up if things change. Best of luck with it."
+    If they say no: "No problem at all. Best of luck with it."
+
+    TONE: Warm, brief, and clean. No hard sell, no attempt to change their mind, no defensiveness. Leave the door open without pushing it.
+
+    MONDAY STATUS: Update the lead status to Abandoned after this conversation ends.
