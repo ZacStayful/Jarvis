@@ -329,6 +329,11 @@ function reengStep2(lead: LeadProfile, conversation: ConversationState): string 
   // WARM — lead has replied before.
   if (leadHasReplied(conversation)) {
     if (conversationHadObjection(conversation)) {
+      // Income worry resolves on a second exposure to the floor framing —
+      // lead with the floor figure rather than a generic "see the numbers".
+      if (topicFromInbound(getLastInboundMessage(conversation)) === 'income') {
+        return `One more thing on the income side for ${addr} — the number worth focusing on is the floor, the quietest realistic month, not the average. It's usually higher than people expect because it's built from comparable properties already letting nearby. Worth seeing it?`
+      }
       return `That concern is fair — most owners weigh that up before looking at short-term letting properly. The bit that usually changes the picture is seeing the actual figures for ${addr}. Want me to send them through?`
     }
     return `Different angle on ${addr} — what would need to be true for short-term letting to make sense for you on this one?`

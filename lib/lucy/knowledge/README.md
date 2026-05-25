@@ -15,3 +15,11 @@ is versioned alongside the code that depends on it.
 
 If you change a file here, also update the corresponding entry in the
 Retell agent (agent_82f187b32e8f5e7913da1c506f) — there's no auto-sync.
+A new file (no legacy hash name) has no Retell entry yet, so upload it
+as a new knowledge document. Pending sync:
+
+- `faq/web-meeting-faq.txt` — re-upload (fixed the six-month-term
+  framing, enriched dynamic pricing, added "managing remotely" and
+  "owner access with 72-hour notice").
+- `extended-profile-intelligence/existing-stl-competitor-switch.txt` —
+  new document, upload to the agent.
