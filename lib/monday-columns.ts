@@ -38,6 +38,15 @@ export const MANAGEMENT_LEADS_COLUMNS = {
   // Voice (Lucy / Retell) — post-call quality metrics
   aiDetectionCount: 'numeric_mm3n3a0e',
   droppedCalls: 'numeric_mm3nt3gd',
+
+  // Psychology profile columns — AI agent intelligence system
+  emotionalProfile:     'text_mm3pk18b',
+  conversionLikelihood: 'numeric_mm3pm45m',
+  profileConfidence:    'text_mm3pc8e',
+  agentInstruction:     'text_mm3qdghs',
+  primaryBlocker:       'text_mm3qbahd',
+  portfolioFlag:        'boolean_mm3qhct4',
+  languageSignals:      'text_mm3qsz99',
 } as const
 
 export const ACTIVITY_LOG_COLUMNS = {
