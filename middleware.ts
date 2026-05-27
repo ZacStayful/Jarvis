@@ -27,7 +27,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/qualifier") ||
     pathname.startsWith("/api/presentation") ||
     pathname.startsWith("/api/tracking") ||
-    pathname.startsWith("/api/lucy/voice")
+    pathname.startsWith("/api/lucy/voice") ||
+    pathname.startsWith("/api/profile-context")
   ) {
     return NextResponse.next();
   }
