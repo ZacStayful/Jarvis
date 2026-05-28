@@ -22,6 +22,7 @@ export function middleware(request: NextRequest) {
   // pre-qualifier/presentation pages. None of them carry a session cookie.
   if (
     pathname.startsWith("/api/retell") ||
+    pathname.startsWith("/api/profile-context") ||
     pathname.startsWith("/api/monday") ||
     pathname.startsWith("/api/email") ||
     pathname.startsWith("/api/qualifier") ||
