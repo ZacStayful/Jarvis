@@ -3,5 +3,11 @@
   "buildCommand": "next build",
   "devCommand": "next dev",
   "installCommand": "npm install",
-  "regions": ["lhr1"]
+  "regions": ["lhr1"],
+  "crons": [
+    {
+      "path": "/api/cron/weekly-intelligence",
+      "schedule": "0 22 * * 0"
+    }
+  ]
 }
