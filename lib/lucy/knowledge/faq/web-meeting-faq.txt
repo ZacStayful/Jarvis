@@ -28,8 +28,14 @@ A: On the same property, short-term letting typically grosses two to three times
 Q: Can I still use the property myself? / Can I block dates for personal use? / Can I stay in it?
 A: Yes, the property stays yours to use whenever you want. You just block the dates in the calendar and we work around them — most owners use the property a few weeks a year and let it the rest of the time.
 
+Q: What if I need access to my own property? / How do I get in while it's being let? / Can I access it whenever I want?
+A: Of course — it's your property and you can have access whenever you need it. All we ask is 72 hours notice before access, so we can coordinate around any guest bookings and make sure there's no clash with someone mid-stay. Give us those three days and we'll get it arranged for you.
+
 Q: What does full management actually mean? / What do you do for me? / What's included?
 A: Full management means we handle everything end-to-end — listings, photography, dynamic pricing, guest enquiries, bookings, check-ins, cleaning, linen, maintenance coordination, reviews, and your monthly payout. The only thing you do is approve the setup and check the statement when the payout lands.
+
+Q: How do I know what's happening if I'm not local? / Managing it remotely worries me / I don't live near the property, how does that work?
+A: That's exactly what full management is built for — you never need to be hands-on or nearby. We handle check-in with smart locks, our local supplier network covers cleaning and maintenance on the ground, and you get your own private Slack channel with the team plus an out-of-hours line for anything urgent. Most of our owners aren't local and plenty are overseas, so the whole thing is designed to run without you ever being there.
 
 Q: What happens if a guest damages the property? / How am I protected from damage? / Is there cover for guests?
 A: Every guest stay is covered by short-term-let insurance — we use Guardhog and Pikl, the two specialist providers for this market. They cover guest-caused damage, accidental damage, and liability, so you're not relying on a standard home policy that would exclude paying guests.
@@ -56,24 +62,24 @@ Q: How do you vet guests? / Are guests checked? / What stops bad guests booking?
 A: Every guest is vetted before booking — government ID verification, deposit checks, and screening against the red-flag patterns we see in this industry. We hold a damage deposit on every stay, and we don't accept under-25 local bookings without further checks.
 
 Q: How does the pricing work? / Do you change the price? / What's dynamic pricing?
-A: Pricing changes day by day based on demand, local events, comparable properties, and how far ahead the booking is. So you're never under-pricing during peak weekends or over-pricing during quiet midweeks — the system targets the highest occupancy at the best rate.
+A: We use smart data to set the price and then keep optimising it day by day — it responds to real demand, your booking patterns, guest reviews, seasonality, local events, and how far ahead the booking is. So you're never under-pricing a peak weekend or sitting too high in a quiet midweek; the rate flexes to earn the most the market will pay at any given moment, rather than sitting at one static figure.
 
 — CONTRACT & TERMS —
 
 Q: How long is the contract? / What's the minimum term?
-A: The initial term is six months, and after that it moves to a three-month rolling notice period. The reason for the fixed six is that we don't charge any onboarding fees — we invest in setting the property up properly and need enough time for it to start performing.
+A: The initial term is six months, and after that it moves to a three-month rolling notice period. The reason for the fixed six is that it takes that long to build real momentum and reach the figures we project — a new listing needs time to establish bookings, reviews, and ranking before it performs at its best.
 
 Q: What's the notice period after the first six months? / How do I end the contract?
-A: After the six-month fixed term you're on a rolling three-month notice — you can give notice at any point and we wind down cleanly over three months. It's not a long lock-in; the structure just makes sure the setup investment works for both sides.
+A: After the six-month fixed term you're on a rolling three-month notice — you can give notice at any point and we wind down cleanly over three months. It's not a long lock-in; the fixed period just gives the listing time to build momentum and reach the figures we project.
 
 Q: Can I sell the property while it's being managed? / What if I want to sell?
 A: You can sell at any point — we just work around viewings and coordinate with your estate agent to keep them from clashing with bookings. If the sale completes, we transfer the listings to the new owner if they want to continue, or wind down cleanly.
 
 Q: Are there any upfront fees? / Do I pay anything to get started?
-A: Zero upfront costs — no setup fee, no onboarding charge, no listing fee, nothing to pay before bookings start. We only earn when you earn, which is why we have the six-month minimum to make the setup work for both sides.
+A: There are no fees from us to get started — no setup fee, no onboarding charge, no listing fee. The only upfront spend is on the property itself if it needs anything to be guest-ready, like furnishing or finishing touches, and that sits with you as the owner. You never pay Stayful anything before bookings start — we only earn when you earn.
 
 Q: Why is the minimum term six months? / Can I do a shorter contract?
-A: The minimum is six months because we cover all the onboarding work upfront — photography, listings, pricing setup, supplier coordination — and the property needs that long to start performing properly. After that it's a rolling three-month notice, so the only real commitment is the first six.
+A: The minimum is six months because that's how long it takes to build momentum and reach the figures we've projected — a new listing has to establish bookings, reviews, and ranking before it performs at its best. We don't charge anything to onboard you; the only setup costs are whatever the property itself needs to be guest-ready, and those sit with you as the owner. After that it's a rolling three-month notice, so the only real commitment is the first six.
 
 Q: How long does it take to go live? / When will guests start booking?
 A: Most properties go live within two to four weeks of signing. The variables are usually photography scheduling, any furnishing top-ups, and getting insurance and access set up — none of which are huge blockers.

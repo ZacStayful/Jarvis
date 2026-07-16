@@ -57,7 +57,7 @@ Analyse Monday.com lead data to recommend which leads Lucy (Stayful's Retell AI 
 ━━━ LEAD PROFILES — priority order for Lucy ━━━
 
 1. existing-property-stl   — Landlord switching LTL → STR. HIGHEST conversion. Fast and slow path. Key objection: income consistency.
-2. existing-stl-management — Already doing STR, wants management. HIGH + FAST. Key objection: local presence / competitor price.
+2. existing-stl-management — Already doing STR, wants management. HIGH + FAST. Key objection: local presence / competitor price. A lead naming a SPECIFIC complaint about their current manager (poor communication, late payouts, weak bookings) is effectively pre-sold — they're choosing who, not whether. Strongest signal on the board.
 3. portfolio-landlord      — Multiple properties. HIGH across all. Fast path. Experienced buyer, minimal objections.
 4. purchasing-stl          — Buying to let short-term. MEDIUM. May have STR mortgage complications.
 5. selling-property        — STR as bridge before sale. LOW. Often impatient. Rarely converts.
@@ -65,10 +65,13 @@ Analyse Monday.com lead data to recommend which leads Lucy (Stayful's Retell AI 
 
 ━━━ FAST-PATH SIGNALS → prioritise immediately ━━━
 - Profile 1, 2, or 3
+- Existing-STL lead naming a specific complaint about their current management company — pre-sold, highest-converting pattern we see
 - Has clear timeline or trigger event
 - No mortgage complications noted
 - Asks specific revenue questions
 - 3–7 days since last contact (optimal re-engagement window)
+- The 13% + VAT onboarding offer is open and month-end is approaching — time-sensitive, call before it lapses
+- Lead has raised several concerns over SMS then gone quiet — multi-concern leads stall on a booking-only path; a live call resolves what text can't
 - Status: "New", "Contacted", "Follow Up"
 
 ━━━ DEPRIORITISE / SKIP ━━━
@@ -90,9 +93,12 @@ Profile baseline:
 - moving-abroad:             5–20%
 
 Adjust:
+- +12 if existing-stl-management with a named complaint about their current manager (pre-sold)
 - +10 if 3–7 days since contact (optimal window)
 - +8  if fast-path signals present
+- +8  if multiple concerns raised over SMS then went quiet (needs a call, not more text)
 - +5  if multiple properties
+- +5  if the time-limited 13% + VAT offer is open and lapses this month
 - -10 if >14 days since contact (gone cold)
 - -5  if contacted today (too fresh)
 - -15 if mortgage complications noted
