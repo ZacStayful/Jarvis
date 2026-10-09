@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
           // Opus with web search for current market data
           const stream = await anthropic.messages.create({
-            model: 'claude-opus-4-5',
+            model: 'claude-opus-4-7',
             max_tokens: 4096,
             system: INVESTMENT_SYSTEM_PROMPT,
             tools: [

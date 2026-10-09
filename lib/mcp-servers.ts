@@ -11,6 +11,9 @@
 //   CALENDLY_API_KEY        — Calendly Personal Access Token
 //   GRANOLA_API_KEY         — Granola API token
 //
+// authorization_token is the bare token: Anthropic's MCP connector sends it
+// as "Authorization: Bearer <token>" itself.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface MCPServer {
@@ -35,7 +38,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://mcp.monday.com/mcp',
       name: 'monday',
-      authorization_token: `Bearer ${process.env.MONDAY_API_KEY}`,
+      authorization_token: process.env.MONDAY_API_KEY,
     });
   } else {
     missing.push('Monday.com');
@@ -47,7 +50,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://drivemcp.googleapis.com/mcp/v1',
       name: 'google_drive',
-      authorization_token: `Bearer ${process.env.GOOGLE_ACCESS_TOKEN}`,
+      authorization_token: process.env.GOOGLE_ACCESS_TOKEN,
     });
   } else {
     missing.push('Google Drive');
@@ -59,7 +62,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://gmailmcp.googleapis.com/mcp/v1',
       name: 'gmail',
-      authorization_token: `Bearer ${process.env.GOOGLE_ACCESS_TOKEN}`,
+      authorization_token: process.env.GOOGLE_ACCESS_TOKEN,
     });
     // Gmail shares the same Google access token — no separate missing entry
   }
@@ -70,7 +73,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://calendarmcp.googleapis.com/mcp/v1',
       name: 'google_calendar',
-      authorization_token: `Bearer ${process.env.GOOGLE_ACCESS_TOKEN}`,
+      authorization_token: process.env.GOOGLE_ACCESS_TOKEN,
     });
   }
 
@@ -80,7 +83,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://mcp.slack.com/mcp',
       name: 'slack',
-      authorization_token: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      authorization_token: process.env.SLACK_BOT_TOKEN,
     });
   } else {
     missing.push('Slack');
@@ -92,7 +95,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://mcp.calendly.com',
       name: 'calendly',
-      authorization_token: `Bearer ${process.env.CALENDLY_API_KEY}`,
+      authorization_token: process.env.CALENDLY_API_KEY,
     });
   } else {
     missing.push('Calendly');
@@ -104,7 +107,7 @@ export function buildMcpServers(): MCPConfig {
       type: 'url',
       url: 'https://mcp.granola.ai/mcp',
       name: 'granola',
-      authorization_token: `Bearer ${process.env.GRANOLA_API_KEY}`,
+      authorization_token: process.env.GRANOLA_API_KEY,
     });
   } else {
     missing.push('Granola');

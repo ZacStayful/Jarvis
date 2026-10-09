@@ -18,13 +18,14 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
-import type { ViewRoute } from "@/lib/commandRouter";
+import { detectMarketingCommand, type ViewRoute } from "@/lib/commandRouter";
 import { useJARVIS } from "@/hooks/useJARVIS";
 import { useCrossSessionContext } from "@/hooks/useCrossSessionContext";
 import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useTTS } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
+import { hasSpeakerTags, janetVoiceId, splitBySpeaker } from "@/lib/ads/speakers";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
@@ -50,6 +51,7 @@ import { Bubble } from "@/components/jarvis/Bubble";
 import { MessageRenderer } from "@/components/MessageRenderer";
 import NewsBriefingView from "@/components/views/NewsBriefingView";
 import InvestmentDashboardView from "@/components/views/InvestmentDashboardView";
+import { MarketingDepartmentView } from "@/components/views/MarketingDepartmentView";
 import {
   CommandView,
   ConversationView,
@@ -86,7 +88,7 @@ export default function JarvisPage() {
   // Phase 8's client-side ElevenLabs streaming is intentionally disabled
   // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
   // ElevenLabs env vars are added in Vercel.
-  const { speak, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
+  const { speak, speakSequence, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
 
   // Phase 8 — load cross-session context block to inject into the system prompt
   const crossSession = useCrossSessionContext();
@@ -106,6 +108,7 @@ export default function JarvisPage() {
       if (params) setViewParams(params);
     },
     crossSessionContext: crossSessionBlock,
+    activeView: routedView,
     // Disable Phase 8 client-streaming voice — we use the server proxy below
     voiceEnabled: false,
     persistSession: true,
@@ -257,9 +260,20 @@ export default function JarvisPage() {
         skipNextAssistantSpeechRef.current = false;
         return;
       }
-      speak(latest.content);
+      if (!hasSpeakerTags(latest.content)) {
+        speak(latest.content);
+        return;
+      }
+      // Marketing department reply: speak each director's part in their own
+      // voice — Janet's ElevenLabs voice if set, otherwise Jarvis's.
+      speakSequence(
+        splitBySpeaker(latest.content).map((part) => ({
+          text: part.text,
+          voiceId: part.speaker === "janet" ? janetVoiceId() : undefined,
+        }))
+      );
     }
-  }, [messages, muted, speak]);
+  }, [messages, muted, speak, speakSequence]);
 
   // Auto-greet on first mount (after login). Uses sessionStorage so a hard
   // refresh inside the same tab doesn't keep replaying the welcome.
@@ -377,6 +391,7 @@ export default function JarvisPage() {
       stopSpeaking();
       if (
         !handlePresenceCheck(text) &&
+        !handleMarketingRequest(text) &&
         !handleNewsRequest(text) &&
         !handleNewsConversation(text)
       ) {
@@ -437,6 +452,25 @@ export default function JarvisPage() {
   const handlePresenceCheck = (text: string): boolean => {
     if (!isPresenceCheck(text)) return false;
     if (!muted) speak(presenceResponse());
+    return true;
+  };
+
+  // Marketing department — "how are the ads doing?", "Janet, …", "department
+  // briefing". Runs before the news handler because "briefing" would
+  // otherwise be read as a news request. Opens the view locally and sends
+  // the message on to Claude, which answers as Jarvis and/or Janet. No local
+  // ack: muzzling the next assistant reply would silence the directors.
+  const handleMarketingRequest = (text: string): boolean => {
+    if (!detectMarketingCommand(text)) return false;
+    if (routedView !== "marketing-department") {
+      clearAllViews();
+      setRoutedView("marketing-department");
+      // Instant acknowledgement while the directors' reply is written. Not
+      // muzzled: the reply is still spoken, and cuts this off if it's ready
+      // first.
+      if (!muted) speak("Opening the marketing department.");
+    }
+    sendMessage(text);
     return true;
   };
 
@@ -648,6 +682,7 @@ export default function JarvisPage() {
     setInput("");
     stopSpeaking();
     if (handlePresenceCheck(txt)) return;
+    if (handleMarketingRequest(txt)) return;
     if (handleNewsRequest(txt)) return;
     if (handleNewsConversation(txt)) return;
     applyNavIntents(txt);
@@ -723,6 +758,8 @@ export default function JarvisPage() {
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <LucyView />
           </div>
+        ) : routedView === "marketing-department" ? (
+          <MarketingDepartmentView messages={messages} state={state} feedRef={feedRef} />
         ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <NewsBriefingView

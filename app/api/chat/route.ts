@@ -4,8 +4,8 @@
 // Handles all JARVIS conversations with streaming SSE output.
 // Integrates MCP servers for live data access.
 // Supports two modes:
-//   - Standard (claude-sonnet-4-20250514) — fast, for most operations
-//   - Deep (claude-opus-4-6) — slower, for investment analysis + complex decisions
+//   - Standard (claude-sonnet-4-6) — fast, for most operations
+//   - Deep (claude-opus-4-7) — slower, for investment analysis + complex decisions
 //
 // SSE output format (consumed by useJARVIS hook):
 //   data: { type: 'start', model: '...' }
@@ -18,7 +18,8 @@
 import { NextRequest } from 'next/server';
 import { buildMcpServers } from '@/lib/mcp-servers';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
-import { detectCommand } from '@/lib/commandRouter';
+import { detectAddressedDirector, detectCommand } from '@/lib/commandRouter';
+import { buildMarketingContext } from '@/lib/ads/department';
 import { detectLucyCommand, LUCY_SYSTEM_CONTEXT } from '@/lib/lucy-commands';
 import {
   detectPortfolioCommand,
@@ -29,8 +30,8 @@ import type { ApiMessage } from '@/types/jarvis';
 export const runtime = 'edge';
 export const maxDuration = 120; // seconds — allow time for MCP tool calls
 
-const SONNET_MODEL = 'claude-sonnet-4-20250514';
-const OPUS_MODEL = 'claude-opus-4-6';
+const SONNET_MODEL = 'claude-sonnet-4-6';
+const OPUS_MODEL = 'claude-opus-4-7';
 
 // ─── SSE Helpers ──────────────────────────────────────────────────────────────
 
@@ -50,16 +51,23 @@ export async function POST(req: NextRequest) {
   let deep: boolean;
   let maxTokens: number;
   let crossSessionContext: string | undefined;
+  let activeView: string | undefined;
 
   try {
     const body = await req.json();
-    messages = body.messages ?? [];
+    // A failed turn leaves an empty assistant message in the client's
+    // history; Anthropic rejects empty content, so one failure would break
+    // every later request. Drop them.
+    messages = ((body.messages ?? []) as ApiMessage[]).filter(
+      (m) => typeof m.content === 'string' && m.content.trim() !== ''
+    );
     deep = body.deep ?? false;
     maxTokens = body.maxTokens ?? (deep ? 4096 : 2048);
     crossSessionContext =
       typeof body.crossSessionContext === 'string' && body.crossSessionContext.trim()
         ? body.crossSessionContext
         : undefined;
+    activeView = typeof body.activeView === 'string' ? body.activeView : undefined;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,
@@ -102,14 +110,31 @@ export async function POST(req: NextRequest) {
     ? detectPortfolioCommand(lastUserMessage.content)
     : null;
 
+  // ── Marketing department: Jarvis + Janet, read-only stayful-ads data.
+  //    Injected when this message is a marketing question, or when the
+  //    marketing view is already open and nothing else was asked for — so
+  //    follow-ups ("what did you change last week?") keep the data.
+  const marketingViewOpen = activeView === 'marketing-department';
+  const marketingIntent = commandResult.view === 'marketing-department';
+  const marketingFollowUp =
+    marketingViewOpen && !commandResult.view && !lucyCommand && !portfolioCommand;
+  const marketingContext =
+    lastUserMessage && (marketingIntent || marketingFollowUp)
+      ? await buildMarketingContext(detectAddressedDirector(lastUserMessage.content))
+      : null;
+
   // ── ACTIVE VIEW directive: any time a command opens a view, tell Claude
   //    explicitly what view is being shown and how to respond. Replaces the
   //    old canned ROUTE_RESPONSES short-circuit so Claude actually thinks
   //    about what to say instead of repeating a stock phrase.
+  // A marketing question asked while the marketing view is already open is a
+  // follow-up, not a view change — no "acknowledge the view" directive.
   const activeViewName =
-    commandResult.view ??
-    (portfolioCommand ? 'portfolio-dashboard' : null) ??
-    (lucyCommand ? 'lucy-intelligence-centre' : null);
+    marketingIntent && marketingViewOpen
+      ? null
+      : commandResult.view ??
+        (portfolioCommand ? 'portfolio-dashboard' : null) ??
+        (lucyCommand ? 'lucy-intelligence-centre' : null);
 
   const activeViewDirective = activeViewName
     ? `=== ACTIVE VIEW DIRECTIVE ===
@@ -139,6 +164,7 @@ Voice cadence: short sentences. This response will be spoken aloud.
     buildSystemPrompt(missingIntegrations),
     lucyCommand ? LUCY_SYSTEM_CONTEXT : null,
     portfolioCommand ? PORTFOLIO_SYSTEM_CONTEXT : null,
+    marketingContext,
     activeViewDirective,
     crossSessionContext ?? null,
   ]
@@ -171,15 +197,16 @@ Voice cadence: short sentences. This response will be spoken aloud.
         });
       }
 
-      try {
-        // ── Call Anthropic API with MCP + streaming ────────────────────────
-        const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      // MCP connector (beta mcp-client-2025-11-20): each server in
+      // mcp_servers needs a matching mcp_toolset entry in tools.
+      const callAnthropic = (withMcp: boolean) =>
+        fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'mcp-client-2025-04-04',
+            ...(withMcp && { 'anthropic-beta': 'mcp-client-2025-11-20' }),
           },
           body: JSON.stringify({
             model,
@@ -187,20 +214,38 @@ Voice cadence: short sentences. This response will be spoken aloud.
             system: systemPrompt,
             messages,
             stream: true,
-            ...(mcpServers.length > 0 && { mcp_servers: mcpServers }),
+            ...(withMcp && {
+              mcp_servers: mcpServers,
+              tools: mcpServers.map((s) => ({ type: 'mcp_toolset', mcp_server_name: s.name })),
+            }),
           }),
         });
 
+      const readError = async (res: Response) => {
+        const errorText = await res.text();
+        try {
+          return JSON.parse(errorText).error?.message ?? `Anthropic API error ${res.status}`;
+        } catch {
+          return errorText || `Anthropic API error ${res.status}`;
+        }
+      };
+
+      try {
+        // ── Call Anthropic API with MCP + streaming ────────────────────────
+        let anthropicRes = await callAnthropic(mcpServers.length > 0);
+
+        // A broken integration (expired token, server down) shouldn't silence
+        // JARVIS: retry once without the MCP servers.
+        if (!anthropicRes.ok && mcpServers.length > 0) {
+          console.error(
+            `[chat] Anthropic ${anthropicRes.status} with MCP servers (${mcpServers.map((s) => s.name).join(', ')}): ${await readError(anthropicRes)} — retrying without them`
+          );
+          anthropicRes = await callAnthropic(false);
+        }
+
         if (!anthropicRes.ok) {
-          const errorText = await anthropicRes.text();
-          let errorMessage = `Anthropic API error ${anthropicRes.status}`;
-          try {
-            const errorJson = JSON.parse(errorText);
-            errorMessage = errorJson.error?.message ?? errorMessage;
-          } catch {
-            // Use raw text if not JSON
-            errorMessage = errorText || errorMessage;
-          }
+          const errorMessage = await readError(anthropicRes);
+          console.error(`[chat] Anthropic ${anthropicRes.status} (${model}): ${errorMessage}`);
           send({ type: 'error', message: errorMessage });
           controller.close();
           return;
@@ -278,10 +323,9 @@ Voice cadence: short sentences. This response will be spoken aloud.
             // ── error event from Anthropic stream ──────────────────────────
             if (eventType === 'error') {
               const errDetails = event.error as Record<string, unknown> | undefined;
-              send({
-                type: 'error',
-                message: (errDetails?.message as string) ?? 'Stream error',
-              });
+              const message = (errDetails?.message as string) ?? 'Stream error';
+              console.error(`[chat] Anthropic stream error (${model}): ${message}`);
+              send({ type: 'error', message });
               controller.close();
               return;
             }
@@ -314,6 +358,7 @@ Voice cadence: short sentences. This response will be spoken aloud.
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[chat] ${message}`);
         send({ type: 'error', message });
         try {
           controller.close();

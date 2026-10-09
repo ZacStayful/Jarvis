@@ -46,6 +46,9 @@ export type { ViewRoute };
 type UseJARVISOptions = BaseUseJARVISOptions & {
   onRoute?: (view: ViewRoute, params?: Record<string, unknown>) => void;
   crossSessionContext?: string;
+  // The routed view on screen; /api/chat keeps the marketing department's
+  // context for follow-ups while 'marketing-department' is open.
+  activeView?: string | null;
   voiceEnabled?: boolean;
   persistSession?: boolean;
 };
@@ -86,7 +89,9 @@ function extractActionRequest(text: string): {
 
 function toApiMessages(messages: Message[]): ApiMessage[] {
   return messages
-    .filter(m => !m.isStreaming)
+    // Empty content (a reply that failed before any text) is rejected by
+    // the API and would break every later request.
+    .filter(m => !m.isStreaming && m.content.trim() !== '')
     .map(m => ({
       role: m.role,
       content: m.type === 'approval' ? m.content : (m as TextMessage).content,
@@ -147,6 +152,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     onError,
     onRoute,
     crossSessionContext = '',
+    activeView,
     voiceEnabled = true,
     persistSession = true,
   } = options;
@@ -289,6 +295,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
             deep,
             maxTokens: deep ? 4096 : 2048,
             crossSessionContext: crossSessionContext || undefined,
+            activeView: activeView || undefined,
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -304,6 +311,8 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         let fullText = '';
         let modelUsed = '';
         let firstChunk = true;
+        let streamError: string | null = null;
+        let sseBuffer = ''; // an SSE line can arrive split across chunks
 
         // Voice: buffer sentences for streaming TTS
         let spokenUpTo = 0;
@@ -322,8 +331,9 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() ?? '';
 
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue;
@@ -366,13 +376,17 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
               }
 
               if (parsed.type === 'error') {
-                throw new Error(parsed.message);
+                streamError = String(parsed.message ?? 'Unknown error');
               }
             } catch {
               // Skip malformed SSE lines
             }
           }
         }
+
+        // Surface server errors (handled below) instead of finishing with an
+        // empty reply.
+        if (streamError) throw new Error(streamError);
 
         // Speak any remaining text
         if (voiceEnabled && fullText.slice(spokenUpTo).trim()) {
@@ -449,6 +463,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
       onError,
       onRoute,
       crossSessionContext,
+      activeView,
       voiceEnabled,
       speak,
       isSpeaking,

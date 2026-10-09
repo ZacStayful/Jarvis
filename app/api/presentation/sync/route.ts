@@ -6,6 +6,7 @@
 // Env: MONDAY_API_KEY
 
 import { NextRequest, NextResponse } from 'next/server';
+import { bodyTooLarge, isMondayItemId, isShortAnswer, isShortValue } from '@/lib/public-lead-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (bodyTooLarge(req)) {
+    return NextResponse.json({ error: 'Body too large' }, { status: 413, headers: CORS_HEADERS });
+  }
+
   let body: {
     item_id?: string | number;
     lead_name?: string;
@@ -53,6 +58,21 @@ export async function POST(req: NextRequest) {
       { error: 'Missing item_id or responses' },
       { status: 400, headers: CORS_HEADERS },
     );
+  }
+
+  // Public route (called from the lead's browser): accept only a numeric
+  // item ID and a bounded set of short answers.
+  const entries =
+    typeof responses === 'object' && !Array.isArray(responses) ? Object.entries(responses) : null;
+  if (
+    !isMondayItemId(item_id) ||
+    !entries ||
+    entries.length > 30 ||
+    !entries.every(([k, v]) => k.length <= 100 && isShortAnswer(v)) ||
+    (formatted !== undefined && !isShortValue(formatted, 20000)) ||
+    (lead_name !== undefined && !isShortValue(lead_name, 200))
+  ) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400, headers: CORS_HEADERS });
   }
 
   const answeredCount = Object.keys(responses).length;

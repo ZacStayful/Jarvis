@@ -49,6 +49,44 @@ but persistence simply won't happen until both env vars are set.
 | --- | --- | --- |
 | Monday API access | `MONDAY_API_KEY`, optional `MONDAY_BOARD_ID` (defaults to `5891626711`) | 🟡 — env var likely set; no `/api/lucy/*` calls observed in latest log window (nav collision now fixed in this commit, so try again) |
 
+## Marketing department (Jarvis + Janet)
+
+Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h). Opened by marketing questions ("how are the ads doing?", "Janet, …", "department briefing").
+
+| Feature | What it needs (Vercel env) | Status |
+| --- | --- | --- |
+| Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it the view and the directors say the data is unavailable |
+| Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice. Inlined at build: redeploy after changing it |
+
+## API route security
+
+Routes called by outside services can't use the login cookie, so `middleware.ts` locks them with a shared secret instead. The lock is **off until `JARVIS_API_SECRET` is set**, so update the callers first, then set the variable.
+
+| Feature | What it needs (Vercel env) | Status |
+| --- | --- | --- |
+| Lock on `/api/whatsapp`, `/api/calendly` (not the webhook), `/api/retell`, `/api/monday`, `/api/email`, `/api/lucy/voice` | `JARVIS_API_SECRET` (`openssl rand -hex 32`) | 🟡 — set in Vercel (Production + Preview). Takes effect with the deploy that includes this lock; until then these routes are open to anyone with the URL (they can email leads, text them, start Lucy calls and edit Monday) |
+
+Callers send the secret as an `x-jarvis-secret` header, `Authorization: Bearer <secret>`, or `?key=<secret>` on the URL. Update every caller **before** the lock goes live (the variable is set and the code that enforces it is deployed):
+
+1. **Retell (Lucy) custom functions**: `monday/lead`, `monday/update-lead`, `monday/get-updates`, `monday/update-status`, `retell/send-link`, `calendly/availability`, `calendly/book`. Add `?key=…` to each function URL, or the header if Retell lets you set one.
+2. **Retell agent webhooks**: the call webhook (`/api/retell/webhook`) and the inbound dynamic-variables webhook (`/api/lucy/voice/context`). Add `?key=…`.
+3. **n8n HTTP nodes**: anything n8n posts to these prefixes uses the n8n Header Auth credential **"JARVIS API Secret"** (header `x-jarvis-secret`). ✅ Done for "Forward to Jarvis" in *Stayful: Inbound SMS to Monday* (how Twilio texts reach `/api/whatsapp/reply`) and the eight `whatsapp/send-*` nodes in *SMS Qualified Management*.
+4. **Twilio** messaging webhook: goes to n8n, which forwards to JARVIS (item 3). If it's ever pointed straight at `/api/whatsapp/reply`, add `?key=…`.
+5. **Resend** webhook (`/api/email/tracking`): add `?key=…`.
+6. **AssemblyAI** transcription callbacks (`/api/retell/transcribe?itemId=…`): whatever submits the job adds `&key=…` to `webhook_url`.
+7. **Calendly** webhook (`/api/calendly/webhook`): not behind this lock (see below). To secure it, recreate the subscription with a signing key and set `CALENDLY_WEBHOOK_SIGNING_KEY`.
+
+Anything still missing the secret gets a 401 once the lock is live; the Vercel runtime logs show which route. To roll back, remove `JARVIS_API_SECRET` in Vercel and redeploy. The JARVIS test page (`/test/whatsapp`) keeps working through your login.
+
+Lead-facing routes (`/api/qualifier`, `/api/presentation`, `/api/tracking`) stay public, because leads' browsers call them. They only accept a numeric Monday item ID, known fields and short values.
+
+Self-authenticating routes skip the login check:
+- `/api/cron/weekly-intelligence`: Vercel cron sends `Authorization: Bearer <CRON_SECRET>`. The route refuses everything if `CRON_SECRET` isn't set (it is set in Vercel).
+- `/api/intelligence/approve` and `/reject`: links signed with `REVIEW_SECRET`, so they open from your inbox without a login.
+- `/api/calendly/webhook`: checks Calendly's signature once `CALENDLY_WEBHOOK_SIGNING_KEY` is set (🔴 not set yet: the current subscription has no signing key, so the webhook is still open). It always answers 200, because Calendly switches a subscription off after repeated errors.
+
+The weekly report email (`lib/intelligence.ts`) is sent through the old `stayful-voice-api` app's `/api/email/send`, so don't pause or delete that Vercel project until the email moves.
+
 ## MCP integrations (Claude tool-use)
 
 These are bearer-token MCP servers wired up in `lib/mcp-servers.ts`. Each

@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
     // Use Opus for deep analysis — this is a strategic intelligence task
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 4000,
       system: ANALYSIS_SYSTEM,
       messages: [
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       analysis,
       callsAnalysed: calls.length,
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

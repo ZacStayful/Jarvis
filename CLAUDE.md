@@ -45,6 +45,8 @@ stopSpeaking()
   ↓
 handlePresenceCheck(text)    // "are you there?" → instant local ack
   ↓
+handleMarketingRequest(text) // ads / Janet / "department briefing" → view + Claude
+  ↓
 handleNewsRequest(text)      // news intent / category routing / summarise
   ↓
 handleNewsConversation(text) // stop/no-more during open briefing
@@ -212,6 +214,39 @@ intent is unclear, Claude must briefly list 4–6 most-likely
 capabilities and ask which fits — never "I don't understand", never
 silence. See the "WHEN YOU CAN'T TELL WHAT ZAC IS ASKING" section in
 `lib/jarvis-system-prompt.ts`.
+
+---
+
+## API route security (middleware.ts)
+
+- Routes without the login cookie fall into three lists in `middleware.ts`:
+  `SERVICE_ROUTES` (Retell, n8n, Twilio, Resend, AssemblyAI, Calendly
+  functions — locked by `JARVIS_API_SECRET` via `x-jarvis-secret` / Bearer /
+  `?key=`, open until that env var is set) and `PUBLIC_LEAD_ROUTES` (leads'
+  browsers — open, so each route validates input with
+  `lib/public-lead-input.ts`) and `SELF_AUTHENTICATED_ROUTES` (`/api/cron`
+  checks `CRON_SECRET`, `/api/intelligence` checks HMAC-signed links,
+  `/api/calendly/webhook` checks Calendly's signature and must never 401 —
+  Calendly disables subscriptions after repeated errors). A new no-login
+  route goes in one of the three lists; never add a bare bypass.
+
+---
+
+## Marketing department (Jarvis + Janet)
+
+- Read-only view of the private `ZacStayful/stayful-ads` repo:
+  `lib/ads/department.ts` (server only, `STAYFUL_ADS_GITHUB_TOKEN`, 1h
+  cache). Never commit ad data here; never call Meta; never write to
+  stayful-ads.
+- `detectMarketingCommand` runs before news/leads on client and server
+  ("department briefing" would otherwise open the news).
+- `/api/chat` injects the MARKETING CONTEXT block for marketing questions
+  *and* for any follow-up while `activeView === 'marketing-department'`
+  (sent by `useJARVIS`), so "what did you change last week?" keeps the data.
+- Replies tag each director with `[JARVIS]` / `[JANET]` on its own line.
+  Tags stay in history (the model keeps the format); `splitBySpeaker` in
+  `lib/ads/speakers.ts` labels them in the chat and `useTTS.speakSequence`
+  voices them (Janet: `NEXT_PUBLIC_JANET_VOICE_ID`). Untagged = Jarvis.
 
 ---
 

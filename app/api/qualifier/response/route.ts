@@ -6,6 +6,7 @@
 // Env: MONDAY_API_KEY
 
 import { NextRequest, NextResponse } from 'next/server';
+import { bodyTooLarge, isMondayItemId, isOptionalInt, isShortValue } from '@/lib/public-lead-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (bodyTooLarge(req)) {
+    return NextResponse.json({ error: 'Body too large' }, { status: 413, headers: CORS_HEADERS });
+  }
+
   let body: {
     monday_item_id?: string | number;
     field?: string;
@@ -70,6 +75,17 @@ export async function POST(req: NextRequest) {
   const columnId = FIELD_MAP[field];
   if (!columnId) {
     return NextResponse.json({ error: `Unknown field: ${field}` }, { status: 400, headers: CORS_HEADERS });
+  }
+
+  // Public route (called from the lead's browser): numeric item ID, short
+  // answer, sane question counters.
+  if (
+    !isMondayItemId(monday_item_id) ||
+    !isShortValue(value, 2000) ||
+    !isOptionalInt(question_num, 0, 100) ||
+    !isOptionalInt(total_questions, 0, 100)
+  ) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400, headers: CORS_HEADERS });
   }
 
   const today = new Date().toISOString().split('T')[0];
