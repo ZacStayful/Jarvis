@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
-const MODEL = 'claude-opus-4-5'; // Opus for deep analysis
+const MODEL = 'claude-opus-4-7'; // Opus for deep analysis
 
 const SYSTEM_PROMPT = `You are JARVIS's learning extraction engine. Your sole purpose is to analyse a day's conversation between JARVIS and Zac (founder of Stayful, a short-term rental property management company), and extract strategically valuable learnings.
 
