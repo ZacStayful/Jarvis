@@ -106,8 +106,6 @@ export default function JarvisPage() {
       if (params) setViewParams(params);
     },
     crossSessionContext: crossSessionBlock,
-    // Disable Phase 8 client-streaming voice — we use the server proxy below
-    voiceEnabled: false,
     persistSession: true,
   });
 
@@ -333,13 +331,22 @@ export default function JarvisPage() {
     return () => clearTimeout(timer);
   }, [salesOpen, salesMetrics, muted, speak, stopLoadingMessages]);
 
-  // Phase 8 — summarise session on tab close (best-effort, non-blocking)
+  // Summarise the session into cross-session memory when the tab is hidden
+  // or closed. `beforeunload` fetches are routinely killed by the browser;
+  // visibilitychange + pagehide with a keepalive request is what survives.
   useEffect(() => {
-    const handler = () => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") endSession().catch(() => {});
+    };
+    const onPageHide = () => {
       endSession().catch(() => {});
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [endSession]);
 
   // Always-on voice — persisted in localStorage, default on

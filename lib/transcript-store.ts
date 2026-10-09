@@ -10,6 +10,7 @@ export interface StoredMessage {
   content: string;
   timestamp: string; // ISO string
   model?: string;
+  speaker?: 'jarvis' | 'janet';
 }
 
 export interface StoredTranscript {
@@ -95,13 +96,20 @@ export function appendMessages(
     timestamp: Date;
     model?: string;
     isStreaming?: boolean;
+    local?: boolean;
+    speaker?: 'jarvis' | 'janet';
   }>
 ): void {
   const today = getTodayTranscript();
   const existingIds = new Set(today.messages.map(m => m.id));
 
+  // Local messages (greetings, handovers, error notices) are UI-only.
   const incoming = messages.filter(
-    m => !m.isStreaming && m.content.trim().length > 0 && !existingIds.has(m.id)
+    m =>
+      !m.isStreaming &&
+      !m.local &&
+      m.content.trim().length > 0 &&
+      !existingIds.has(m.id)
   );
 
   if (incoming.length === 0) return;
@@ -117,6 +125,7 @@ export function appendMessages(
         timestamp:
           m.timestamp instanceof Date ? m.timestamp.toISOString() : String(m.timestamp),
         model: m.model,
+        speaker: m.speaker,
       })),
     ],
     lastUpdated: new Date().toISOString(),
@@ -163,7 +172,8 @@ export function formatTranscriptForExtraction(transcript: StoredTranscript): str
         hour: '2-digit',
         minute: '2-digit',
       });
-      const speaker = m.role === 'user' ? 'ZAC' : 'JARVIS';
+      const speaker =
+        m.role === 'user' ? 'ZAC' : m.speaker === 'janet' ? 'JANET' : 'JARVIS';
       return `[${time}] ${speaker}: ${m.content}`;
     })
     .join('\n\n');
