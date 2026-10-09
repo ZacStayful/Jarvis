@@ -16,7 +16,7 @@ import { detectPortfolioCommand } from '@/lib/portfolio/commands';
 import { detectSalesCommand, isSalesQuestion } from '@/lib/sales/commands';
 import { detectInvestmentCommand } from '@/lib/investment-commands';
 import { detectPersonaSwitch } from '@/lib/persona-commands';
-import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
+import { detectMarketingCommand, detectAddressedDirector, isCapacityQuestion } from '@/lib/commandRouter';
 import { detectRetentionCommand, isRetentionQuestion, OTHER_VIEW_RE } from '@/lib/retention/commands';
 
 describe('intent-utils', () => {
@@ -54,6 +54,7 @@ describe('local routing against the shared utterance table', () => {
       const pane = routeCommand(text);
       const marketing = detectMarketingCommand(text);
       const retention = detectRetentionCommand(text);
+      const capacity = isCapacityQuestion(text);
 
       const fired = {
         presence,
@@ -66,7 +67,14 @@ describe('local routing against the shared utterance table', () => {
         pane,
         marketing,
         retention: retention === 'navigate',
+        capacity,
       };
+
+      // The capacity check runs ahead of marketing, retention, news and the
+      // nav intents, so it must not claim any phrasing routed elsewhere.
+      if (want.kind !== 'capacity' && want.kind !== 'persona') {
+        expect(fired.capacity).toBe(false);
+      }
 
       switch (want.kind) {
         case 'presence':
@@ -98,6 +106,9 @@ describe('local routing against the shared utterance table', () => {
         case 'retention':
           expect(fired.retention).toBe(true);
           break;
+        case 'capacity':
+          expect(fired.capacity).toBe(true);
+          break;
         case 'pane':
           expect(fired.pane).toBe(want.view);
           break;
@@ -113,6 +124,7 @@ describe('local routing against the shared utterance table', () => {
             pane: null,
             marketing: false,
             retention: false,
+            capacity: false,
           });
           break;
       }

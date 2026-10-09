@@ -22,8 +22,9 @@
 // open (`activeView`) so the prompt can reflect it.
 //
 // Marketing department: Janet always gets the MARKETING CONTEXT block
-// (read-only stayful-ads data); JARVIS gets it for a marketing question or
-// while the marketing view is open, so follow-ups keep the data.
+// (read-only stayful-ads data); JARVIS gets it for a marketing question, a
+// lead-database capacity question, or while the marketing view is open, so
+// follow-ups keep the data.
 //
 // MCP connector (beta mcp-client-2025-11-20): each server in mcp_servers
 // needs a matching mcp_toolset entry in tools. If a request with MCP servers
@@ -41,7 +42,7 @@ import {
   PORTFOLIO_SYSTEM_CONTEXT,
 } from '@/lib/portfolio/commands';
 import { getPersona, isPersonaId, DEFAULT_PERSONA } from '@/lib/personas';
-import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
+import { detectMarketingCommand, detectAddressedDirector, isCapacityQuestion } from '@/lib/commandRouter';
 import { buildMarketingContext } from '@/lib/ads/department';
 import { formatAdPerformanceForPrompt, getAdPerformance, isMetaConnected } from '@/lib/janet/meta';
 import type { ApiMessage, InputMode, PersonaId } from '@/types/jarvis';
@@ -395,11 +396,15 @@ export async function POST(req: NextRequest) {
   ];
 
   // Marketing department data (read-only stayful-ads). Janet always has it;
-  // JARVIS gets it for a marketing question or while the department view is
-  // open so follow-ups keep the data. Scoped to the speaker's files.
+  // JARVIS gets it for a marketing question, a capacity question (the
+  // snapshot's lead-database capacity block, whichever view is open), or
+  // while the department view is open so follow-ups keep the data. Scoped
+  // to the speaker's files.
   const marketingViewOpen = activeView === 'marketing-department';
   const marketingIntent =
-    !!lastUserMessage && !isApprovalTurn && detectMarketingCommand(lastUserMessage.content);
+    !!lastUserMessage &&
+    !isApprovalTurn &&
+    (detectMarketingCommand(lastUserMessage.content) || isCapacityQuestion(lastUserMessage.content));
   const marketingContextFor = async (who: PersonaId): Promise<string | null> => {
     if (isApprovalTurn) return null;
     if (who !== 'janet' && !marketingIntent && !marketingViewOpen) return null;

@@ -14,11 +14,14 @@ import { C } from "@/lib/jarvis-design";
 import { DIRECTORS } from "@/lib/ads/speakers";
 import type {
   AngleCoverage,
+  CapacityStageId,
+  CapacityStageStatus,
   DepartmentData,
   Director,
   RegisterRow,
   SnapshotAd,
   SnapshotAdSet,
+  SnapshotCapacity,
   WeeklySnapshot,
 } from "@/lib/ads/types";
 import type { JARVISState, Message } from "@/types/jarvis";
@@ -226,6 +229,10 @@ function JarvisPanel({ snapshot, history }: { snapshot: WeeklySnapshot; history:
         </div>
       </Block>
 
+      <Block title="LEAD DATABASE CAPACITY" colour={C.primary}>
+        <CapacityPanel capacity={snapshot.capacity ?? null} asOf={snapshot.week_ending} />
+      </Block>
+
       <Block title="FOR YOU IN ADS MANAGER" colour={C.primary}>
         {actions.length === 0 ? <Muted>Nothing this week.</Muted> : <BulletList items={actions} colour={C.primary} />}
       </Block>
@@ -381,6 +388,167 @@ function AdVerdictsTable({ ads }: { ads: SnapshotAd[] }) {
       ])}
     />
   );
+}
+
+// ─── Jarvis: lead-database capacity ───────────────────────────────────────────
+//
+// The snapshot's capacity block, as written by the Friday check. Labels only:
+// every figure is shown as-is, "—" when missing.
+
+// `plain` is the bottleneck said in plain words (the prompt's wording);
+// `label` names the stage in the list.
+const STAGE_WORDS: Record<CapacityStageId, { label: string; plain: string }> = {
+  area_match: { label: "Area match", plain: "Leads landing where no buyer covers" },
+  buyer_capacity: { label: "Buyer capacity", plain: "Buyers are full: leads we can't sell" },
+  landlord_supply: { label: "Landlord supply", plain: "Buyers owed more leads than we produce" },
+  meeting_capacity: { label: "Meeting capacity", plain: "Your diary" },
+  buyer_enquiries: { label: "Buyer enquiries", plain: "Not enough buyer enquiries" },
+  booking_rate: { label: "Booking rate", plain: "Booking rate" },
+  attendance: { label: "Attendance", plain: "Attendance" },
+  close_rate: { label: "Close rate", plain: "Close rate" },
+  churn: { label: "Churn", plain: "Buyers cancelling" },
+};
+
+const stageWords = (stage: string | null | undefined) =>
+  stage ? STAGE_WORDS[stage as CapacityStageId] ?? { label: stage, plain: stage } : null;
+
+const STATUS_COLOUR: Record<CapacityStageStatus, string> = {
+  ok: C.bright,
+  watch: C.amber,
+  bottleneck: C.red,
+};
+
+const pct = (n: number | null | undefined) => (isNum(n) ? `${n.toLocaleString("en-GB")}%` : "—");
+
+const signed = (n: number | null | undefined) =>
+  isNum(n) ? (n > 0 ? `+${count(n)}` : n < 0 ? `−${count(-n)}` : "0") : "—";
+
+/** low_sample names a rate by its field ("booking_rate_pct") or its stage
+ *  ("booking_rate"); accept either. */
+function isLowSample(lowSample: string[] | null | undefined, ...names: string[]): boolean {
+  const flagged = new Set((lowSample ?? []).map((s) => s.toLowerCase().replace(/_pct$/, "")));
+  return names.some((n) => flagged.has(n));
+}
+
+function CapacityPanel({ capacity, asOf }: { capacity: SnapshotCapacity | null; asOf: string | null | undefined }) {
+  if (!capacity) {
+    return <Muted>The Friday check hasn&rsquo;t measured capacity yet.</Muted>;
+  }
+  const supply = capacity.supply ?? {};
+  const demand = capacity.demand ?? {};
+  const ceiling = capacity.ceiling ?? {};
+  const pipeline = capacity.pipeline ?? {};
+  const bottleneck = capacity.bottleneck ?? {};
+  const stages = capacity.stages ?? [];
+  const words = stageWords(bottleneck.stage);
+
+  const rates: Array<[string, number | null | undefined, boolean]> = [
+    ["BOOKING", pipeline.booking_rate_pct, isLowSample(pipeline.low_sample, "booking_rate")],
+    ["ATTENDANCE", pipeline.attendance_rate_pct, isLowSample(pipeline.low_sample, "attendance_rate", "attendance")],
+    ["CLOSE", pipeline.close_rate_pct, isLowSample(pipeline.low_sample, "close_rate")],
+  ];
+
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 9, color: C.textMid, letterSpacing: "0.1em", marginBottom: 8 }}>
+        AS OF {fmtDate(asOf).toUpperCase()}
+        {isNum(capacity.window_days) ? ` · ${capacity.window_days}-DAY WINDOW` : ""}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Chip colour={words ? C.red : C.textMid}>{words ? words.plain.toUpperCase() : "NO BOTTLENECK NAMED"}</Chip>
+        {bottleneck.headline && (
+          <span className="raj" style={{ fontSize: 13, color: C.text }}>
+            {bottleneck.headline}
+          </span>
+        )}
+      </div>
+      {bottleneck.action && <Para>{bottleneck.action}</Para>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginTop: 12 }}>
+        <Tile
+          value={`${count(demand.customers_unpaused)} / ${count(demand.customers_total)}`}
+          label="CUSTOMERS UNPAUSED / TOTAL"
+          sub={`CEILING ${count(ceiling.ceiling_next)} NEXT MONTH`}
+        />
+        <Tile
+          value={count(supply.leads_month)}
+          label="LANDLORD LEADS A MONTH"
+          sub={`${count(supply.sales_per_lead)} SALES PER LEAD`}
+        />
+        <Tile
+          value={count(demand.credits_owed)}
+          label="CREDITS OWED"
+          sub={`${signed(demand.credits_owed_change)} THIS WEEK`}
+        />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <Label>WHAT IT TAKES</Label>
+      </div>
+      <div className="raj" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 8px", fontSize: 13, color: C.text }}>
+        <span>{count(pipeline.new_customers_needed)} new customers</span>
+        <Arrow />
+        <span>
+          {count(pipeline.meetings_needed)} meetings{" "}
+          <span style={{ color: C.textMid }}>(of {count(pipeline.meeting_capacity_month)})</span>
+        </span>
+        <Arrow />
+        <span>{count(pipeline.bookings_needed)} bookings</span>
+        <Arrow />
+        <span>
+          {count(pipeline.buyer_enquiries_needed)} buyer enquiries{" "}
+          <span style={{ color: C.textMid }}>vs {count(pipeline.buyer_enquiries_actual)} actual</span>
+        </span>
+      </div>
+      <div className="mono" style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", fontSize: 9, color: C.textMid, letterSpacing: "0.1em", marginTop: 6 }}>
+        {rates.map(([label, value, low]) => (
+          <span key={label}>
+            {label} {pct(value)}
+            {low && <span style={{ color: C.amber }}> · SMALL SAMPLE</span>}
+          </span>
+        ))}
+      </div>
+
+      {stages.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 14 }}>
+          {stages.map((s, i) => {
+            const colour = (s.status && STATUS_COLOUR[s.status]) || C.textLow;
+            return (
+              <div key={`${s.stage ?? "stage"}-${i}`} className="raj" style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.4 }}>
+                <span title={s.status ?? "unknown"} style={{ width: 7, height: 7, borderRadius: "50%", background: colour, flexShrink: 0, transform: "translateY(-1px)" }} />
+                <span style={{ color: C.text, minWidth: 110 }}>{stageWords(s.stage)?.label ?? "—"}</span>
+                <span className="mono" style={{ fontSize: 10, color: colour, minWidth: 40 }}>
+                  {s.value === null || s.value === undefined || s.value === "" ? "—" : typeof s.value === "number" ? count(s.value) : s.value}
+                </span>
+                <span style={{ color: C.textMid, fontWeight: 300 }}>{s.reason ?? ""}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Tile({ value, label, sub }: { value: string; label: string; sub: string }) {
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "8px 10px", minWidth: 0 }}>
+      <div className="orb" style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
+        {value}
+      </div>
+      <div className="mono" style={{ fontSize: 8, color: C.textLow, letterSpacing: "0.12em", marginTop: 2 }}>
+        {label}
+      </div>
+      <div className="mono" style={{ fontSize: 8, color: C.textMid, letterSpacing: "0.1em", marginTop: 2 }}>
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+function Arrow() {
+  return <span style={{ color: C.primary }}>→</span>;
 }
 
 // ─── Janet: creative ──────────────────────────────────────────────────────────

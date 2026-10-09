@@ -195,7 +195,7 @@ export function parseSnapshot(text: string): WeeklySnapshot | null {
     const value = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const snapshot = value as WeeklySnapshot;
-    return { ...snapshot, creative: snapshot.creative ?? null };
+    return { ...snapshot, creative: snapshot.creative ?? null, capacity: snapshot.capacity ?? null };
   } catch {
     return null;
   }
