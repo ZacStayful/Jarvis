@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'edge';
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+// Tolerate stray quotes or spaces pasted into the Vercel value.
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY?.trim().replace(/^["']+|["']+$/g, '').trim();
+
+// The shape of the configured key, for diagnosing a rejected key without
+// ever logging the key itself.
+function describeKey(raw: string | undefined): string {
+  const v = raw ?? '';
+  return `length ${v.length}, starts with sk_: ${v.replace(/^[\s"']+/, '').startsWith('sk_')}, quotes: ${/["']/.test(v)}, whitespace: ${/\s/.test(v)}`;
+}
+
 const DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 const ELEVENLABS_MODEL = 'eleven_turbo_v2_5';
 
@@ -62,7 +71,14 @@ export async function POST(req: NextRequest) {
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
-      console.error('ElevenLabs error:', upstream.status, detail);
+      console.error(
+        'ElevenLabs error:',
+        upstream.status,
+        detail,
+        upstream.status === 401 || upstream.status === 400
+          ? `| ELEVENLABS_API_KEY as set: ${describeKey(process.env.ELEVENLABS_API_KEY)}`
+          : ''
+      );
       return NextResponse.json(
         { error: 'TTS upstream failed', status: upstream.status },
         { status: 502 }
