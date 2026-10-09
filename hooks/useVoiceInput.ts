@@ -124,6 +124,7 @@ export function useVoiceInput(
       stopListening();
       return;
     }
+    if (voiceStateRef.current === 'requesting') return; // already starting
 
     setError(null);
     updateState('requesting');

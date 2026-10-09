@@ -229,10 +229,11 @@ function JARVISBubble({
       </div>
 
       <div className="flex-1 min-w-0">
-        {/* Model label */}
-        {message.model && !message.isStreaming && (
+        {/* Speaker label */}
+        {!message.isStreaming && (
           <div className="text-xs text-zinc-600 font-mono mb-1.5 tracking-wider">
-            JARVIS {message.model.includes('opus') ? '· DEEP' : ''}
+            {speakerLabel(message.speaker)}
+            {message.model?.includes('opus') ? ' · DEEP' : ''}
           </div>
         )}
 
@@ -241,9 +242,20 @@ function JARVISBubble({
           {renderContent(message.content)}
           {message.isStreaming && <StreamingCursor />}
         </div>
+
+        {/* Technical detail behind a friendly error line — never spoken */}
+        {message.errorDetail && (
+          <div className="mt-1.5 text-[11px] font-mono text-zinc-600 break-words">
+            {message.errorDetail}
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+function speakerLabel(speaker?: string): string {
+  return speaker === 'janet' ? 'JANET' : 'JARVIS';
 }
 
 // ─── Approval bubble ──────────────────────────────────────────────────────────

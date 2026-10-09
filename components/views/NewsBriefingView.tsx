@@ -442,11 +442,13 @@ function LoadingSkeleton({ progress }: { progress: string }) {
 interface NewsBriefingViewProps {
   autoFetch?: boolean;
   onComplete?: (articles: NewsArticle[]) => void;
+  /** Fired once when a fetch fails, so the voice layer can say so. */
+  onError?: (message: string) => void;
   activeCategory?: string;
   initialCategories?: string[];
 }
 
-export default function NewsBriefingView({ autoFetch = true, onComplete, activeCategory: activeCategoryProp, initialCategories }: NewsBriefingViewProps) {
+export default function NewsBriefingView({ autoFetch = true, onComplete, onError, activeCategory: activeCategoryProp, initialCategories }: NewsBriefingViewProps) {
   const { news, fetchNewsBriefing, refreshNews } = useIntelligence();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const wasLoadingRef = useRef(false);
@@ -471,6 +473,16 @@ export default function NewsBriefingView({ autoFetch = true, onComplete, activeC
     }
     wasLoadingRef.current = news.isLoading;
   }, [news.isLoading, news.articles, onComplete]);
+
+  // Fire onError on the error transition (once per failure)
+  const lastErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (news.error && news.error !== lastErrorRef.current) {
+      lastErrorRef.current = news.error;
+      onError?.(news.error);
+    }
+    if (!news.error) lastErrorRef.current = null;
+  }, [news.error, onError]);
 
   // Filtered + sorted articles
   const filteredArticles = sortByPriority(

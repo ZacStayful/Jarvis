@@ -6,6 +6,7 @@ interface BubbleMessage {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  speaker?: "jarvis" | "janet";
 }
 
 export function Bubble({ msg }: { msg: BubbleMessage }) {
@@ -34,7 +35,7 @@ export function Bubble({ msg }: { msg: BubbleMessage }) {
             className="orb"
             style={{ fontSize: 8, color: C.primary, letterSpacing: "0.18em", marginBottom: 5 }}
           >
-            JARVIS
+            {msg.speaker === "janet" ? "JANET" : "JARVIS"}
           </div>
         )}
         <p

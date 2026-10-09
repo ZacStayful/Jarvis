@@ -1,9 +1,9 @@
 # CLAUDE.md — JARVIS Project Memory
 
-You are working on JARVIS, the personal voice-driven command centre for
-Zac, founder of Stayful (UK short-term-rental hospitality). Read this
-file before doing anything else — it captures conventions and
-architectural decisions that aren't obvious from the code.
+You are working on JARVIS, the voice-driven command centre for Zac, founder
+of Stayful (UK short-term-rental hospitality). Read this file before doing
+anything else — it captures conventions and architectural decisions that
+aren't obvious from the code.
 
 Run `git log --oneline -20` to see what changed recently. Each commit
 message is a self-contained explanation of intent.
@@ -13,13 +13,15 @@ message is a self-contained explanation of intent.
 ## Branch & deploy model
 
 - Production branch: `main` → Vercel **production** deploy.
-- Feature branches (e.g. `claude/setup-jarvis-project-*`) → Vercel
-  **preview** deploys at branch URLs.
+- Feature branches → Vercel **preview** deploys at branch URLs.
 - Work in progress lives on a feature branch. When stable, open a PR
-  into `main`. The PR body should explain the *why*. Merging pushes
-  production forward.
+  into `main`. The PR body should explain the *why*.
 - Push every commit with `git push -u origin <branch>` — retries on
   network errors only (2/4/8/16s).
+- Checks: `npx tsc --noEmit && npm test && npm run build`. Tests are
+  vitest, under `lib/__tests__/`. `lib/__tests__/fixtures/utterances.ts`
+  is the shared table of Zac's real phrasings and what each must do —
+  add to it whenever a matcher changes.
 
 ---
 
@@ -30,199 +32,211 @@ message is a self-contained explanation of intent.
   - `claude-sonnet-4-6`
   - `claude-haiku-4-5-20251001`
 - **Never** use older dated IDs like `claude-sonnet-4-20250514` or
-  `claude-opus-4-5`. The news pipeline was migrated to `sonnet-4-6` for
-  speed. If you see a dated ID in code, that's a bug.
+  `claude-opus-4-5`. If you see a dated ID in code, that's a bug.
 
 ---
 
-## Voice transcript pipeline (the critical flow)
+## Staff: JARVIS and Janet
 
-Every final transcript (voice or text input) flows through this exact
-chain in `app/page.tsx`. Each handler returns `true` to short-circuit:
+Zac talks to a two-person team that shares one conversation:
+
+- **JARVIS** — managing director. Operations, pipeline, Lucy, Monday,
+  calendar, email, investments, news, decisions. Opens every session.
+- **Janet** — marketing creative director. Ads, angles, creative, copy,
+  web-meeting evidence, campaign performance. Calm, measured, precise.
+
+Everything that differs between them is data in `lib/personas.ts`
+(identity prompt, remit, greeting banks, handover/presence/thinking
+lines, error line, ElevenLabs voice env var + settings). Adding a third
+person is a data change.
+
+- `activePersona` in `app/page.tsx` is who Zac is talking to. Switch via
+  the header toggle or by voice (`lib/persona-commands.ts`: "switch to
+  Janet", "Janet, …"). Talking *about* someone never switches.
+- Every assistant message carries `speaker`. Bubbles label it; the TTS
+  queue sends `persona` to `/api/speak`, which picks
+  `ELEVENLABS_VOICE_ID_JARVIS` / `ELEVENLABS_VOICE_ID_JANET` (fallback
+  `ELEVENLABS_VOICE_ID`).
+- **Hand-offs**: a reply may end with `<handoff to="janet">brief</handoff>`
+  (or `to="jarvis"`). `/api/chat` holds the tag back, emits a `speaker`
+  event and runs one more streamed turn as the other person, with the
+  brief in a HAND-OFF block. The client gets two messages, two voices.
+  After a hand-off the active persona is the last speaker.
+- Dashboards (sales, news, Lucy, portfolio, investments) are JARVIS's;
+  opening one switches to him silently.
+
+---
+
+## The utterance chain (the critical flow)
+
+Voice and typed input go through the same `handleUtterance` in
+`app/page.tsx`:
 
 ```
-stopSpeaking()
+stopSpeaking() + cancel remaining speech + interrupt() if a reply is in flight
   ↓
-handlePresenceCheck(text)    // "are you there?" → instant local ack
+detectPersonaSwitch        // "switch to Janet", "Janet, …" → switch (+ remainder)
   ↓
-handleNewsRequest(text)      // news intent / category routing / summarise
+isPresenceCheck            // "are you there?" (whole utterance) → instant local line
   ↓
-handleNewsConversation(text) // stop/no-more during open briefing
+handleNewsRequest          // news intent / category switch / summarise
   ↓
-applyNavIntents(text)        // non-news nav: portfolio, lucy, leads, etc
+handleNewsConversation     // stop / no-more while the briefing is open
   ↓
-sendMessage(text)            // Claude fallback (always responds)
+applyNavIntents            // sales, portfolio, lucy, investments, legacy panes
+  ↓                        //   → { consumed, openedView, deep }
+sendMessage(text, deep, { inputMode, persona, activeView, viewJustOpened, viewContext })
 ```
 
-Both the voice path (`useVoiceInput.onFinalTranscript`) and the typed
-path (`handleSend`) use this same chain. If you add a new local
-intercept, wire it into **both**.
-
-**Why this order matters:**
-- Presence checks must respond in <500ms (no Claude round-trip).
-- News routing is owned locally so the briefing opens instantly with
-  the right category filter — don't move it back into Claude's
-  `/api/chat` route detector.
-- `applyNavIntents` runs *after* the local handlers, so a news intent
-  is already resolved by the time we get there.
+`consumed` means the message was fully handled locally (sales open, sales
+question, "stop"). Opening a view is *not* consumed: the ack plays and
+Claude's reply is queued after it. `openedView` is passed explicitly
+because React state hasn't flushed in the same tick.
 
 ---
 
-## Routing split: `routedView` vs `activeView`
+## Routing: the client owns it
 
-There are two view-state systems and they aren't interchangeable:
+`/api/chat` does **no** intent detection and emits no route events. The
+body tells it `activeView` / `viewJustOpened` / `viewContext` and the
+prompt gets an ACTIVE VIEW block (and LIVE VIEW DATA, e.g. the sales
+metrics line from `lib/sales/context.ts`). Two view systems remain:
 
-- `routedView` (type `ViewRoute` from `lib/commandRouter.ts`): the
-  **rich modern views** — `news-briefing`, `investment-dashboard`,
-  etc. Set directly from `app/page.tsx` (local handlers) **or** via
-  `useJARVIS.onRoute` (server-side detection in `/api/chat`).
-- `activeView` (type `ViewId` from `lib/jarvis-design.ts`): the
-  **legacy pane system** — `news`, `investments`, `leads`, etc. Driven
-  by `routeCommand()` regex in `applyNavIntents`.
+- `routedView` (`ViewRoute`: `news-briefing` | `investment-dashboard`) and
+  the boolean `salesOpen` / `lucyOpen` / `portfolioOpen` — the real views.
+- `activeView` (`ViewId`) — the legacy mock panes (`command`, `tasks`,
+  `intelligence`, `log`), reachable by explicit command or nav dots.
 
-The render tree in `app/page.tsx` checks `routedView` first, so
-`activeView` is effectively invisible when a `routedView` is set.
-Prefer `routedView` for any new feature.
+`clearAllViews()` before setting any of them.
 
 ---
 
-## Voice intent matchers (where to add new phrases)
+## Intent matching convention (strict / loose)
 
-- `lib/voice-news-intents.ts` — news/category/summarise/stop patterns.
-- `lib/voice-presence.ts` — presence-check phrases ("are you there?").
-- `lib/lucy-commands.ts` — Lucy-specific.
-- `lib/portfolio/commands.ts` — portfolio-specific.
-- `lib/commandRouter.ts` — server-side detection inside `/api/chat`.
-- `lib/jarvis-design.ts` (`routeCommand`) — legacy keyword → ViewId.
+`lib/intent-utils.ts` is the shared toolkit. Every matcher splits:
 
-Add new utterance phrasings to the matcher closest to the feature.
-Patterns are regex against `text.toLowerCase()`. Order matters when
-patterns can overlap (first match wins in `detectCategoryFocus`).
+- **strict** patterns: explicit phrases, match anywhere ("open lucy",
+  "what's the latest news", "how are we doing").
+- **loose** patterns: bare nouns ("news", "monday", "holdings", "leads"),
+  match only when `isCommandShaped(text)` — starts with a nav verb or is
+  ≤ 4 words after `normalise()` strips wake words and politeness.
 
----
+Presence and stop/no-more are whole-utterance (`isWholeUtterance`, ≤ 4
+words). Category switching while the briefing is open needs a switch
+verb, a news noun, or a bare word (`isCategorySwitch`). "I had a
+conversation with a landlord about the pipeline" must reach Claude; the
+fixture file pins this.
 
-## Suppressing TTS overlap
-
-`skipNextAssistantSpeechRef` in `app/page.tsx` exists because nav-ack
-acknowledgments + Claude's chat reply + briefing summary could all
-speak at once. The pattern:
-
-```ts
-if (ack && !muted) {
-  skipNextAssistantSpeechRef.current = true;  // muzzle next assistant message TTS
-  speak(ack);
-}
-```
-
-The auto-speak `useEffect` (line ~135) consumes the flag once and
-resets it. **Local handlers that don't call `sendMessage` don't need
-this** — Claude never replies, so nothing to muzzle.
+Matchers: `lib/voice-presence.ts`, `lib/voice-news-intents.ts`,
+`lib/jarvis-design.ts` (`routeCommand`), `lib/lucy-commands.ts`,
+`lib/portfolio/commands.ts`, `lib/sales/commands.ts`
+(`detectSalesCommand`, `isSalesQuestion`), `lib/investment-commands.ts`,
+`lib/persona-commands.ts`. Regex on normalised text; order matters when
+patterns overlap.
 
 ---
 
-## Barge-in (interrupt JARVIS by speaking)
+## Speech: queue, streaming, chaining
 
-A `useEffect` in `app/page.tsx` watches `useVoiceInput.partialTranscript`
-and calls `stopSpeaking()` whenever a partial arrives that *isn't*
-JARVIS's own voice. The echo filter is `isLikelyEcho` in
-`lib/voice-echo-filter.ts` — it compares the partial against
-`useTTS.currentText` (the text currently being spoken, exposed
-specifically for this purpose). If the partial looks like our own
-voice picked up via mic bleed-through, it's discarded.
+`hooks/useTTS.ts` is a queue. `speak(text, persona)` interrupts;
+`enqueue(text, persona)` appends; `stop()` clears. One reused audio
+element (iOS), next chunk prefetched while the current plays,
+`isSpeaking` true from first enqueue to drain, `onEnd` only on a natural
+drain, `currentText` = the whole group (echo filter needs it).
 
-The filter is also applied to `onFinalTranscript` **only while
-`isSpeaking` is true**. Once JARVIS has stopped, accept everything —
-otherwise a legitimate user response that shares words with the
-question JARVIS just asked (e.g. "political news" answering "what
-type of news? AI, political, regulatory…") gets silently dropped.
-This was a real bug shipped briefly in `ec5ac06`; the gate fix lives
-in `onFinalTranscript` in `app/page.tsx`.
+- Replies are spoken **as they stream**: the effect in `app/page.tsx`
+  feeds every unspoken assistant message to `nextSpeakableChunks`
+  (`lib/speech-chunks.ts`): first complete sentence immediately, then
+  ~60-char batches, flushed on finish. Markdown is stripped; text after
+  `<action_request` / `<handoff` is never spoken.
+- Nav acks use `speak`, replies use `enqueue`, so the ack plays and the
+  answer follows. There is no "muzzle the next reply" flag any more.
+- A **thinking filler** (`persona.thinkingLines`) plays after 3 s of
+  silence while loading; the first sentence is queued behind it.
+- Restored history (timestamp older than mount) and `local` messages are
+  never spoken by the effect; `say()` speaks local lines itself.
 
-Filter heuristic (`isLikelyEcho` in `lib/voice-echo-filter.ts`):
-1. Reject partials < 3 chars (noise / transient recogniser output).
-2. Match: partial appears as a whole word/phrase in spoken text
-   (uses `\b` regex boundaries — so "wait" doesn't match inside
-   "awaiting").
-3. Fallback: 70%+ of partial words appear in spoken text AND at
-   least one adjacent 2-word phrase from the partial appears
-   contiguously in spoken text. The contiguity requirement prevents
-   2-word user responses being flagged just because both words happen
-   to appear separately somewhere in the prompt.
-4. Otherwise treat as real user speech and interrupt.
+---
 
-CRITICAL: keep the bias asymmetric in favour of the user. A blocked
-response (false positive) makes JARVIS look broken. An echo that
-slips through (false negative) is a one-time glitch. If you tighten
-the filter, run through the "political news" case mentally first.
+## Mic policy, talk-over and echo
+
+- Mic is off **only while thinking** (`isLoading && !isSpeaking`). It stays
+  live while JARVIS speaks so Zac can talk over him. Never re-arm the mic
+  with ad-hoc timeouts; the always-on effect owns it.
+- Talk-over: a non-echo partial stops speech and marks the streaming
+  message `cancelledSpeechRef`; the final transcript then calls
+  `useJARVIS.interrupt()` (abort, keep text so far) and sends the new
+  message. `requestSeqRef` in useJARVIS makes stale request handlers
+  no-ops.
+- Echo filter `isLikelyEcho` (`lib/voice-echo-filter.ts`) is applied to
+  finals while speaking **or within 2 s of speech ending**, never later.
+  Keep the bias toward the user: a blocked real response looks broken; an
+  echo that slips through is a one-off glitch. Run the "political news"
+  case mentally before tightening it.
+- `useVoiceInput` reads its callbacks through refs — the recogniser's
+  handlers live for the whole session, so this is what keeps them seeing
+  current state.
+- Touch devices (`pointer: coarse`) default to tap-to-talk; `/api/speak`
+  playback needs a gesture there, which the greeting fallback supplies.
 
 ---
 
 ## `useTTS.onEnd` is the only real "audio played" signal
 
-`speak()` resolves whether or not `audio.play()` actually played.
-Browsers block autoplay before any user gesture and the rejection is
-caught internally. To detect actual playback success (e.g. for
-"greeted on login" sessionStorage flag), use `onEnd` in the useTTS
-options, not the promise return.
-
-This is exactly what the login-page greeting does — see
-`app/login/page.tsx` for the autoplay-fallback pattern (try on mount,
-arm `keydown`/`pointerdown` listener as backup, consume on first
-successful playback).
+`speak()` resolves whether or not audio actually played; autoplay
+rejection clears the queue and reports `onError('Audio playback
+blocked')`. The greeting in `app/page.tsx` (and `app/login/page.tsx`)
+sets its sessionStorage flag only in `onEnd`, and re-arms on the first
+`keydown`/`pointerdown` when playback was blocked.
 
 ---
 
-## News briefing — fast path
+## Greeting
 
-- `/api/news` accepts a `categories: string[]` body field for
-  upstream filtering. One category → ~4–8 articles → typically one
-  Sonnet batch → ~3–5s instead of ~10s for full briefing.
-- Drive it from voice via `newsCategoriesFilter` state in
-  `app/page.tsx`; pass through `initialCategories` prop to
-  `NewsBriefingView`.
-- Use a React `key` prop on `NewsBriefingView` (the joined category
-  list) so switching categories remounts and refetches cleanly.
-- Voice summary endpoint: `/api/news/voice-summary` — takes the
-  article list + optional category, returns a 3–5 sentence flowing
-  Sonnet 4.6 synthesis. Not a verbatim read.
-- "Summarise the news" when briefing is already open re-narrates the
-  cached `loadedArticlesRef` set instead of asking "what type?". See
-  `isSummariseRequest` in `lib/voice-news-intents.ts` and the
-  summarise branch at the top of `handleNewsRequest` in `app/page.tsx`.
-  If a *different* category is named in the same utterance, it falls
-  through to the switch+refetch path and `onComplete` narrates the
-  fresh load.
+`buildGreeting(persona, now)` in `lib/jarvis-lines.ts`: time band
+(London) × weekday flavour from the persona's banks. Added to the feed as
+a `local` message on every mount; spoken once per tab session. No Claude
+round-trip — the feed must not start with 3 s of silence.
+
+---
+
+## Memory
+
+- `sessionId` lives in `sessionStorage` (`jarvis_session_id`) so a refresh
+  resumes the KV session. New tab = new session.
+- `summarise_session` fires on `visibilitychange: hidden` / `pagehide`
+  with `keepalive`, trimmed to 40 messages, throttled. Transcript lines
+  carry `JARVIS:` / `JANET:` attribution.
+- Needs `JARVIS_INTERNAL_TOKEN` === `NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN` in
+  Vercel (see SETUP-STATUS.md). Without them memory is silently off.
 
 ---
 
 ## Approval flow (write actions)
 
-JARVIS never auto-executes write actions. Every write must emit an
+Never auto-execute a write. Every write emits an
 `<action_request>{...}</action_request>` JSON block at the END of the
-response. See `lib/jarvis-system-prompt.ts` for the exact format and
-required fields per ACTION_TYPE. The frontend parses this and renders
-an approval card. Don't bypass this — it's load-bearing.
+response (format in `lib/jarvis-system-prompt.ts`). The frontend renders
+an approval card. Approval turns (`JARVIS_APPROVAL:` / `JARVIS_DENY:`)
+skip intent detection and hand-offs on the server.
 
 ---
 
-## Never go silent
+## Never go silent, never a capability list
 
-System prompt enforces: every user message gets a response. If the
-intent is unclear, Claude must briefly list 4–6 most-likely
-capabilities and ask which fits — never "I don't understand", never
-silence. See the "WHEN YOU CAN'T TELL WHAT ZAC IS ASKING" section in
-`lib/jarvis-system-prompt.ts`.
+Every message gets a real reply. The prompt's "can't make out the words"
+rule applies **only** to unintelligible input; a general question, a joke,
+small talk or an off-tool topic is a clear request and gets answered in
+character. API errors become a spoken persona `errorLine` with the
+technical detail in `errorDetail` on the message (shown small, never
+spoken, never sent back to the API).
 
 ---
 
 ## What to write to this file
 
-Add a new section when you make a decision a future agent couldn't
-infer from reading the code. Examples worth recording:
-- New convention or pattern adopted across files.
-- A non-obvious gotcha (race, autoplay quirk, browser quirk).
-- An architectural choice that has alternatives (so future you doesn't
-  re-debate).
-
-**Don't** duplicate things obvious from filenames or comments. This
-file should stay tight — under ~200 lines. Trim aggressively.
+Add a section when you make a decision a future agent couldn't infer from
+the code: a convention adopted across files, a non-obvious gotcha (race,
+autoplay quirk), an architectural choice with alternatives. Don't
+duplicate what filenames or comments already say. Keep it under ~200
+lines; trim aggressively.
