@@ -17,6 +17,7 @@ import { detectSalesCommand, isSalesQuestion } from '@/lib/sales/commands';
 import { detectInvestmentCommand } from '@/lib/investment-commands';
 import { detectPersonaSwitch } from '@/lib/persona-commands';
 import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
+import { detectRetentionCommand, isRetentionQuestion, OTHER_VIEW_RE } from '@/lib/retention/commands';
 
 describe('intent-utils', () => {
   it('normalises wake words and politeness', () => {
@@ -52,6 +53,7 @@ describe('local routing against the shared utterance table', () => {
       const investment = detectInvestmentCommand(text);
       const pane = routeCommand(text);
       const marketing = detectMarketingCommand(text);
+      const retention = detectRetentionCommand(text);
 
       const fired = {
         presence,
@@ -63,6 +65,7 @@ describe('local routing against the shared utterance table', () => {
         investment: !!investment,
         pane,
         marketing,
+        retention: retention === 'navigate',
       };
 
       switch (want.kind) {
@@ -92,6 +95,9 @@ describe('local routing against the shared utterance table', () => {
         case 'marketing':
           expect(fired.marketing).toBe(true);
           break;
+        case 'retention':
+          expect(fired.retention).toBe(true);
+          break;
         case 'pane':
           expect(fired.pane).toBe(want.view);
           break;
@@ -106,6 +112,7 @@ describe('local routing against the shared utterance table', () => {
             investment: false,
             pane: null,
             marketing: false,
+            retention: false,
           });
           break;
       }
@@ -145,6 +152,29 @@ describe('sales', () => {
     expect(isSalesQuestion('how many no shows this month')).toBe(true);
     expect(isSalesQuestion("what's the capital of Peru")).toBe(false);
     expect(isSalesQuestion("I'll get back to him")).toBe(false);
+  });
+});
+
+describe('lead-database retention', () => {
+  it('does not take the landlord pipeline phrases', () => {
+    expect(detectRetentionCommand('how are we doing')).toBeNull();
+    expect(detectRetentionCommand("what's our conversion rate")).toBeNull();
+    expect(detectRetentionCommand('show me my leads')).toBeNull();
+    expect(detectRetentionCommand('open the pipeline')).toBeNull();
+  });
+
+  it('bare nouns only when command-shaped', () => {
+    expect(detectRetentionCommand('show me churn')).toBe('navigate');
+    expect(detectRetentionCommand('subscribers')).toBe('navigate');
+    expect(detectRetentionCommand('the churn of the river was loud and we talked for hours')).toBeNull();
+  });
+
+  it('isRetentionQuestion routes follow-ups to Claude while the view is open', () => {
+    expect(isRetentionQuestion("what's the conversion rate")).toBe(true);
+    expect(isRetentionQuestion('how many customers have cancelled')).toBe(true);
+    expect(isRetentionQuestion('tell me a joke')).toBe(false);
+    expect(OTHER_VIEW_RE.test('open the news')).toBe(true);
+    expect(OTHER_VIEW_RE.test('how many meetings were booked')).toBe(false);
   });
 });
 

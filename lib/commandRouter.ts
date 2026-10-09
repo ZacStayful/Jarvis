@@ -14,6 +14,7 @@ export type ViewRoute =
   | 'marketing-department'
   | 'news-briefing'
   | 'investment-dashboard'
+  | 'retention-dashboard'
   | null;
 
 // Marketing department (read-only stayful-ads data). Checked before the news

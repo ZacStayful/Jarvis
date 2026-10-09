@@ -34,6 +34,15 @@ import { detectSalesCommand, isSalesQuestion } from "@/lib/sales/commands";
 import { buildSalesContextLine } from "@/lib/sales/context";
 import { detectInvestmentCommand } from "@/lib/investment-commands";
 import { pick, SALES_OPEN, LOADING, SECTION_ACK, QUERY_START, FOLLOW_UP, SILENCE_PROMPT, SALES_CLOSE, PRIORITY_PREFIX } from "@/lib/sales/voice-phrases";
+import { detectRetentionCommand, isRetentionQuestion, OTHER_VIEW_RE, CLOSE_RE } from "@/lib/retention/commands";
+import {
+  buildRetentionBriefing,
+  buildRetentionContextLine,
+  RETENTION_OPEN_LINE,
+  RETENTION_CLOSE_LINE,
+  RETENTION_UNAVAILABLE_LINE,
+} from "@/lib/retention/context";
+import type { RetentionDashboardData } from "@/lib/retention/types";
 import {
   isStopPhrase,
   isNoMorePhrase,
@@ -60,6 +69,7 @@ import { MessageRenderer } from "@/components/MessageRenderer";
 import NewsBriefingView from "@/components/views/NewsBriefingView";
 import InvestmentDashboardView from "@/components/views/InvestmentDashboardView";
 import { MarketingDepartmentView } from "@/components/views/MarketingDepartmentView";
+import RetentionDashboardView from "@/components/views/RetentionDashboardView";
 import {
   CommandView,
   ConversationView,
@@ -203,6 +213,11 @@ export default function JarvisPage() {
   const [salesMetrics, setSalesMetrics] = useState<any>(null);
   const [salesAnswer, setSalesAnswer] = useState<string | null>(null);
 
+  // Lead-database retention dashboard (mounted inline; JARVIS's view). The
+  // loaded payload feeds the LIVE VIEW DATA block for follow-up questions.
+  const [retentionData, setRetentionData] = useState<RetentionDashboardData | null>(null);
+  const retentionBriefedRef = useRef(false);
+
   // Sales voice system refs
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -241,6 +256,7 @@ export default function JarvisPage() {
     stopLoadingMessages();
     setSalesMetrics(null);
     setSalesAnswer(null);
+    setRetentionData(null);
     setNewsActiveCategory(undefined);
     setNewsCategoriesFilter(undefined);
     loadedArticlesRef.current = null;
@@ -314,6 +330,22 @@ export default function JarvisPage() {
       speak(line, speaker);
     },
     [addLocalAssistantMessage, speak, takeIntro]
+  );
+
+  // The retention dashboard narrates itself once per open: ack → loading
+  // lines → this briefing built from the loaded data (no Claude round trip).
+  // A range change reloads the data without briefing again.
+  const handleRetentionLoaded = useCallback(
+    (data: RetentionDashboardData | null) => {
+      setRetentionData(data);
+      stopLoadingMessages();
+      if (retentionBriefedRef.current) return;
+      retentionBriefedRef.current = true;
+      const line = data ? buildRetentionBriefing(data) : RETENTION_UNAVAILABLE_LINE;
+      if (!mutedRef.current) say(line, "jarvis");
+      else addLocalAssistantMessage(line, "jarvis");
+    },
+    [say, stopLoadingMessages, addLocalAssistantMessage]
   );
 
   // News-conversation state: cached articles + controlled UI filter.
@@ -672,6 +704,25 @@ export default function JarvisPage() {
     return { persona: who, justOpened };
   };
 
+  // Lead-database retention — "show me customer retention", "open the lead
+  // database", "what's our churn rate". JARVIS's dashboard: it opens, acks
+  // through ackAs (so JARVIS introduces himself first if Janet was talking),
+  // and narrates itself once loaded (handleRetentionLoaded), so the open is
+  // consumed like the sales dashboard. Runs before the news handler and the
+  // nav intents so neither Lucy's "leads" nor sales' "conversion rate" take
+  // the phrase. Questions while it is open are handled in applyNavIntents.
+  const handleRetentionRequest = (text: string): boolean => {
+    if (routedView === "retention-dashboard") return false;
+    if (detectRetentionCommand(text) !== "navigate") return false;
+    clearAllViews();
+    stopSpeaking();
+    setRoutedView("retention-dashboard");
+    retentionBriefedRef.current = false;
+    ackAs("jarvis", RETENTION_OPEN_LINE);
+    startLoadingMessages();
+    return true;
+  };
+
   // Intercept transcripts while the news briefing view is mounted.
   // Handles stop/no-more interruptions during summary playback.
   const handleNewsConversation = (text: string): boolean => {
@@ -792,6 +843,22 @@ export default function JarvisPage() {
       // goes to Claude with the live metrics attached.
     }
 
+    // Retention view: "close" closes it; a question about its numbers goes
+    // straight to Claude with the live data (skipping the sales detector,
+    // which would otherwise take "what's the conversion rate" to the
+    // landlord pipeline); an explicit other-view word still navigates.
+    if (routedView === "retention-dashboard") {
+      if (isCommandShaped(text) && CLOSE_RE.test(text)) {
+        stopSpeaking();
+        if (!muted) speak(RETENTION_CLOSE_LINE, "jarvis");
+        clearAllViews();
+        return { consumed: true };
+      }
+      if (!OTHER_VIEW_RE.test(text) && isRetentionQuestion(text)) {
+        return { consumed: false };
+      }
+    }
+
     const sales = detectSalesCommand(text);
     if (sales === 'navigate') {
       clearAllViews();
@@ -858,6 +925,8 @@ export default function JarvisPage() {
   //     ↓
   //   marketing request ("how are the ads doing?") → department view + Janet/JARVIS
   //     ↓
+  //   retention request ("show me customer retention") → lead-database view, JARVIS
+  //     ↓
   //   news request / news conversation           → local news flow
   //     ↓
   //   nav intents (sales, portfolio, lucy, investments, panes)
@@ -906,6 +975,7 @@ export default function JarvisPage() {
       return;
     }
 
+    if (handleRetentionRequest(message)) return;
     if (handleNewsRequest(message)) return;
     if (handleNewsConversation(message)) return;
 
@@ -917,7 +987,11 @@ export default function JarvisPage() {
 
     const viewNow = nav.openedView ?? currentViewId();
     const viewContext =
-      viewNow === "sales-dashboard" ? buildSalesContextLine(salesMetrics) : undefined;
+      viewNow === "sales-dashboard"
+        ? buildSalesContextLine(salesMetrics)
+        : viewNow === "retention-dashboard"
+          ? buildRetentionContextLine(retentionData)
+          : undefined;
 
     // "Janet, what do you make of this hook?" — nothing local spoke, so the
     // introduction plays now and the reply queues behind it.
@@ -1084,6 +1158,10 @@ export default function JarvisPage() {
                 if (!mutedRef.current) speak(NEWS_FEED_DOWN_LINE, "jarvis");
               }}
             />
+          </div>
+        ) : routedView === "retention-dashboard" ? (
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <RetentionDashboardView onLoaded={handleRetentionLoaded} />
           </div>
         ) : routedView === "investment-dashboard" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>

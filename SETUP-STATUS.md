@@ -48,6 +48,15 @@ Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h
 | Live ad performance for Janet ("which ads are weakening?" between Friday reviews) | `META_ACCESS_TOKEN` (System User token, `ads_read`), `META_AD_ACCOUNT_ID` (`act_…`), optional `META_GRAPH_VERSION` | 🔴 — not set; Janet answers from the weekly snapshot's verdicts and says the live feed isn't connected |
 | Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's); `/api/speak` reads it server-side by persona, so it no longer needs to be inlined | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice |
 
+## Lead database retention (Jarvis)
+
+Funnel from Monday board 18420649520 (new leads, web meetings booked/sat/no-show, conversion) plus churn, tenure and MRR from the lead-database app, joined on email. Opened by "show me customer retention", "open the lead database", "what's our churn rate".
+
+| Feature | What it needs (Vercel env) | Status |
+| --- | --- | --- |
+| Funnel + board-side customer counts (`/api/retention`) | `MONDAY_API_KEY` (already set for Lucy/sales) | 🟢 — no new secret |
+| Exact churn, tenure in invoices, 1/3/6/12-month retention, MRR, cancel reasons | `LEAD_DATABASE_INTERNAL_SECRET` here **equal to** `JARVIS_INTERNAL_SECRET` on the lead-database Vercel project (served by its `GET /api/internal/retention`); optional `LEAD_DATABASE_URL` (default `https://leads.stayful.co.uk`) | 🔴 — not set; until then the view marks churn "approximate" from the board's labels |
+
 ## API route security
 
 Routes called by outside services can't use the login cookie, so `middleware.ts` locks them with a shared secret instead. The lock is **off until `JARVIS_API_SECRET` is set**, so update the callers first, then set the variable.

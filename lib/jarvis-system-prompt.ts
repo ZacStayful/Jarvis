@@ -42,6 +42,7 @@ const VIEW_LABELS: Record<string, string> = {
   'news-briefing': 'the intelligence (news) briefing',
   'investment-dashboard': 'the investment dashboard',
   'sales-dashboard': 'the sales intelligence dashboard',
+  'retention-dashboard': 'the lead database retention dashboard (operator prospects buying landlord leads: enquiries, web meetings, customers, churn)',
   'portfolio-dashboard': 'the portfolio intelligence dashboard',
   'lucy-intelligence-centre': 'the Lucy intelligence centre',
   command: 'the command centre overview',

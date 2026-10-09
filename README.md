@@ -33,6 +33,8 @@ Required for Phase 1:
 | `ANTHROPIC_API_KEY` | Your Anthropic API key |
 | `JARVIS_PASSWORD` | Choose a strong password |
 | `SESSION_SECRET` | Random 32+ character string |
+| `MONDAY_API_KEY` | Monday.com API token (Lucy, sales and lead-database dashboards) |
+| `LEAD_DATABASE_INTERNAL_SECRET` | Shared secret for the lead-database retention feed (equals `JARVIS_INTERNAL_SECRET` on that app); optional, churn is approximate without it |
 
 Generate a session secret:
 ```bash
@@ -113,6 +115,7 @@ jarvis → cname.vercel-dns.com
 | 7 — Lucy Loop | ⬜ | Lucy triggering, post-call data ingestion |
 | 8 — Polish | ⬜ | Session memory, cross-session context, performance |
 | 9 — Marketing department | 🟡 Preview | Talk to Jarvis (managing director) and Janet (ad creative director) by voice or text; read-only view of the `stayful-ads` weekly snapshot and brief pipeline |
+| 10 — Lead database retention | 🟡 Preview | Jarvis presents the lead-database funnel (Monday board) and customer churn (lead-database feed): new leads, web meetings, conversion, retention per customer |
 
 ---
 
@@ -127,6 +130,9 @@ SESSION_SECRET=
 ASSEMBLYAI_API_KEY=
 ELEVENLABS_API_KEY=        (Phase 2)
 ELEVENLABS_VOICE_ID=       (Phase 2)
+MONDAY_API_KEY=            (Lucy, sales, lead-database dashboards)
+LEAD_DATABASE_INTERNAL_SECRET=   (Phase 10, optional — equals JARVIS_INTERNAL_SECRET on lead-database)
+LEAD_DATABASE_URL=         (Phase 10, optional — default https://leads.stayful.co.uk)
 ```
 
 ---

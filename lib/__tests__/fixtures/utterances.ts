@@ -8,6 +8,7 @@ export type Expected =
   | { kind: 'investment' }
   | { kind: 'sales' }
   | { kind: 'marketing' }
+  | { kind: 'retention' }
   | { kind: 'pane'; view: string }
   | { kind: 'presence' }
   | { kind: 'persona'; persona: 'jarvis' | 'janet'; remainder?: string }
@@ -33,6 +34,12 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: 'department briefing', expect: { kind: 'marketing' } },
   { text: 'which ads are getting weaker?', expect: { kind: 'marketing' } },
   { text: 'should we scale the budget', expect: { kind: 'marketing' } },
+  { text: 'show me customer retention', expect: { kind: 'retention' } },
+  { text: 'open the lead database', expect: { kind: 'retention' }, note: 'Lucy also matches "open … lead"; the retention handler runs first in the chain' },
+  { text: "what's our churn rate", expect: { kind: 'retention' } },
+  { text: 'how many new leads have come into the lead database', expect: { kind: 'retention' } },
+  { text: 'how is the lead database doing', expect: { kind: 'retention' } },
+  { text: 'retention', expect: { kind: 'retention' } },
   { text: 'open tasks', expect: { kind: 'pane', view: 'tasks' } },
   { text: 'show the command centre', expect: { kind: 'pane', view: 'command' } },
   { text: 'are you there?', expect: { kind: 'presence' } },
@@ -60,5 +67,7 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: "how's your day going", expect: { kind: 'claude' } },
   { text: "what's your conviction on the Leeds deal?", expect: { kind: 'claude' } },
   { text: 'can you share the doc with me', expect: { kind: 'claude' } },
+  { text: 'the landlord asked about retention of the deposit', expect: { kind: 'claude' } },
+  { text: 'we lost a subscriber to churn last month', expect: { kind: 'claude' } },
   { text: 'what should I do about my schedule this week', expect: { kind: 'claude' } },
 ];
