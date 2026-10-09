@@ -4,8 +4,8 @@
 // Handles all JARVIS conversations with streaming SSE output.
 // Integrates MCP servers for live data access.
 // Supports two modes:
-//   - Standard (claude-sonnet-4-20250514) — fast, for most operations
-//   - Deep (claude-opus-4-6) — slower, for investment analysis + complex decisions
+//   - Standard (claude-sonnet-4-6) — fast, for most operations
+//   - Deep (claude-opus-4-7) — slower, for investment analysis + complex decisions
 //
 // SSE output format (consumed by useJARVIS hook):
 //   data: { type: 'start', model: '...' }
@@ -29,8 +29,8 @@ import type { ApiMessage } from '@/types/jarvis';
 export const runtime = 'edge';
 export const maxDuration = 120; // seconds — allow time for MCP tool calls
 
-const SONNET_MODEL = 'claude-sonnet-4-20250514';
-const OPUS_MODEL = 'claude-opus-4-6';
+const SONNET_MODEL = 'claude-sonnet-4-6';
+const OPUS_MODEL = 'claude-opus-4-7';
 
 // ─── SSE Helpers ──────────────────────────────────────────────────────────────
 
