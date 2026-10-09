@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ViewRoute =
+  | 'marketing-department'
   | 'news-briefing'
   | 'investment-dashboard'
   | 'command-centre'
@@ -23,6 +24,39 @@ export interface CommandResult {
 // ─────────────────────────────────────────────────────────────────────────────
 // Command pattern maps
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Marketing department (Jarvis + Janet, read-only stayful-ads data). Checked
+// first: "department briefing" would otherwise hit NEWS_PATTERNS and
+// "cost per lead" would hit LEAD_SALES_PATTERNS. Kept specific so it doesn't
+// steal other intents — no bare "scale" (Stayful's growth), "brief me",
+// "campaign" (Lucy campaigns) or "script" (Lucy's script). "Jarvis" alone
+// never triggers it; it's the wake word.
+const MARKETING_PATTERNS = [
+  /\bads\b/i,
+  /\badverts?\b/i,
+  /\badvertising\b/i,
+  /\bad (spend|sets?|accounts?|campaigns?|budget|creatives?|angles?|scripts?|copy|performance|results?)\b/i,
+  /\b(facebook|meta)\b/i,
+  /\bbudget\b/i,
+  /\bcost per (lead|enquiry)\b/i,
+  /\b(cpl|cpm|ctr)\b/i,
+  /\bscaling\b/i,
+  /\bshould (i|we) scale\b/i,
+  /\bscale (it|up|the (ads|budget|campaign))\b/i,
+  /\bmarketing\b/i,
+  /\bdepartment\b/i,
+  /\bcreatives?\b/i,
+  /\bbriefs\b/i,
+  /\b(the|a|new|next|creative|ad) brief\b/i,
+  /\bb\d{3}\b/i,
+  /\bangles\b/i,
+  /\bangle \d+[a-z]?\b/i,
+  /\bwhat are we (making|building)\b/i,
+  /\bvoice ?overs?\b/i,
+  /\blookalikes?\b/i,
+  /\blead forms?\b/i,
+  /\bjanet\b/i,
+];
 
 const NEWS_PATTERNS = [
   /\bnews\b/i,
@@ -105,8 +139,20 @@ const CONVERSATION_LOG_PATTERNS = [
 // Main detection function
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** True when the message is for the marketing department. Shared by the
+ *  client-side intercept in app/page.tsx and detectCommand below. */
+export function detectMarketingCommand(message: string): boolean {
+  const trimmed = message.trim();
+  return MARKETING_PATTERNS.some(r => r.test(trimmed));
+}
+
 export function detectCommand(message: string): CommandResult {
   const trimmed = message.trim();
+
+  // Marketing department — before news/leads (see MARKETING_PATTERNS)
+  if (detectMarketingCommand(trimmed)) {
+    return { view: 'marketing-department', isDeep: false };
+  }
 
   // News briefing
   if (NEWS_PATTERNS.some(r => r.test(trimmed))) {
@@ -160,6 +206,8 @@ export function detectCommand(message: string): CommandResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ROUTE_RESPONSES: Record<NonNullable<ViewRoute>, string> = {
+  'marketing-department':
+    "Opening the marketing department. As of Friday's review, here's where we stand.",
   'news-briefing':
     'Pulling up your intelligence briefing now, sir. Fetching and analysing the latest feeds across all categories.',
   'investment-dashboard':
