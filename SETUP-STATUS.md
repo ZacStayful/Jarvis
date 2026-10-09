@@ -19,7 +19,7 @@ this file whenever you add or remove an integration.
 | Login / session cookie | `JARVIS_PASSWORD`, `SESSION_SECRET` | ✅ |
 | Claude chat (Opus/Sonnet streaming) | `ANTHROPIC_API_KEY` | ✅ |
 | Voice **input** (Web Speech API) | none — runs in browser | ✅ |
-| Voice **output** (server proxy via ElevenLabs, queued, sentence-by-sentence) | `ELEVENLABS_API_KEY` plus one voice per member of staff: `ELEVENLABS_VOICE_ID_JARVIS`, `ELEVENLABS_VOICE_ID_JANET` (either falls back to `ELEVENLABS_VOICE_ID`) | 🟡 — `ELEVENLABS_VOICE_ID` is set (Janet's voice); add the two per-person ids so JARVIS and Janet sound different |
+| Voice **output** (server proxy via ElevenLabs, queued, sentence-by-sentence, one voice per member of staff) | `ELEVENLABS_API_KEY`; JARVIS: `ELEVENLABS_VOICE_ID_JARVIS` → `ELEVENLABS_VOICE_ID`; Janet: `ELEVENLABS_VOICE_ID_JANET` → `NEXT_PUBLIC_JANET_VOICE_ID` → `ELEVENLABS_VOICE_ID` | ✅ — `ELEVENLABS_VOICE_ID` (JARVIS) and `NEXT_PUBLIC_JANET_VOICE_ID` (Janet) are set, so no new variables are needed |
 
 ## Memory / persistence
 
@@ -37,26 +37,43 @@ once the two tokens match (set them to the same value, then redeploy —
 the `NEXT_PUBLIC_` one is inlined at build time) restore and cross-session
 memory work without further code changes.
 
-## Janet (marketing creative director) — next PR
+## Marketing department (Jarvis + Janet)
 
-| Feature | What it needs | Status |
+Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h). Opened by marketing questions ("how are the ads doing?", "Janet, …", "department briefing").
+
+| Feature | What it needs (Vercel env) | Status |
 | --- | --- | --- |
-| Angles / playbook / ad register from the `ZacStayful/stayful-ads` repo | `GITHUB_TOKEN` (fine-grained PAT, contents read/write on that repo), optional `STAYFUL_ADS_REPO` (default `ZacStayful/stayful-ads`) | ⚪ — planned |
-| Live ad performance (which ads are weakening) | `META_ACCESS_TOKEN` (System User, ads_read), `META_AD_ACCOUNT_ID` | ⚪ — tool contract defined, wired when the token exists |
+| Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it the view and the directors say the data is unavailable |
+| Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's); `/api/speak` reads it server-side by persona, so it no longer needs to be inlined | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice |
 
-## Intelligence feeds
+## API route security
 
-| Feature | What it needs | Status |
+Routes called by outside services can't use the login cookie, so `middleware.ts` locks them with a shared secret instead. The lock is **off until `JARVIS_API_SECRET` is set**, so update the callers first, then set the variable.
+
+| Feature | What it needs (Vercel env) | Status |
 | --- | --- | --- |
-| News briefing (NewsAPI + Claude analysis) | `NEWSAPI_KEY` | 🔴 — last call returned 500. **Note:** the free NewsAPI tier blocks server-side requests on Vercel; a paid plan is required for production. |
-| Investment dashboard (mock) | none — uses fixtures | ✅ |
-| Portfolio Intelligence Dashboard | reads `portfolio/data/*.json` | ✅ structure, 🔴 data (placeholder zeros until you run the first quarterly update via chat) |
+| Lock on `/api/whatsapp`, `/api/calendly` (not the webhook), `/api/retell`, `/api/monday`, `/api/email`, `/api/lucy/voice` | `JARVIS_API_SECRET` (`openssl rand -hex 32`) | 🟡 — set in Vercel (Production + Preview). Takes effect with the deploy that includes this lock; until then these routes are open to anyone with the URL (they can email leads, text them, start Lucy calls and edit Monday) |
 
-## Lucy (Monday.com lead intelligence)
+Callers send the secret as an `x-jarvis-secret` header, `Authorization: Bearer <secret>`, or `?key=<secret>` on the URL. Update every caller **before** the lock goes live (the variable is set and the code that enforces it is deployed):
 
-| Feature | What it needs | Status |
-| --- | --- | --- |
-| Monday API access | `MONDAY_API_KEY`, optional `MONDAY_BOARD_ID` (defaults to `5891626711`) | 🟡 — env var likely set; no `/api/lucy/*` calls observed in latest log window (nav collision now fixed in this commit, so try again) |
+1. **Retell (Lucy) custom functions**: `monday/lead`, `monday/update-lead`, `monday/get-updates`, `monday/update-status`, `retell/send-link`, `calendly/availability`, `calendly/book`. Add `?key=…` to each function URL, or the header if Retell lets you set one.
+2. **Retell agent webhooks**: the call webhook (`/api/retell/webhook`) and the inbound dynamic-variables webhook (`/api/lucy/voice/context`). Add `?key=…`.
+3. **n8n HTTP nodes**: anything n8n posts to these prefixes uses the n8n Header Auth credential **"JARVIS API Secret"** (header `x-jarvis-secret`). ✅ Done for "Forward to Jarvis" in *Stayful: Inbound SMS to Monday* (how Twilio texts reach `/api/whatsapp/reply`) and the eight `whatsapp/send-*` nodes in *SMS Qualified Management*.
+4. **Twilio** messaging webhook: goes to n8n, which forwards to JARVIS (item 3). If it's ever pointed straight at `/api/whatsapp/reply`, add `?key=…`.
+5. **Resend** webhook (`/api/email/tracking`): add `?key=…`.
+6. **AssemblyAI** transcription callbacks (`/api/retell/transcribe?itemId=…`): whatever submits the job adds `&key=…` to `webhook_url`.
+7. **Calendly** webhook (`/api/calendly/webhook`): not behind this lock (see below). To secure it, recreate the subscription with a signing key and set `CALENDLY_WEBHOOK_SIGNING_KEY`.
+
+Anything still missing the secret gets a 401 once the lock is live; the Vercel runtime logs show which route. To roll back, remove `JARVIS_API_SECRET` in Vercel and redeploy. The JARVIS test page (`/test/whatsapp`) keeps working through your login.
+
+Lead-facing routes (`/api/qualifier`, `/api/presentation`, `/api/tracking`) stay public, because leads' browsers call them. They only accept a numeric Monday item ID, known fields and short values.
+
+Self-authenticating routes skip the login check:
+- `/api/cron/weekly-intelligence`: Vercel cron sends `Authorization: Bearer <CRON_SECRET>`. The route refuses everything if `CRON_SECRET` isn't set (it is set in Vercel).
+- `/api/intelligence/approve` and `/reject`: links signed with `REVIEW_SECRET`, so they open from your inbox without a login.
+- `/api/calendly/webhook`: checks Calendly's signature once `CALENDLY_WEBHOOK_SIGNING_KEY` is set (🔴 not set yet: the current subscription has no signing key, so the webhook is still open). It always answers 200, because Calendly switches a subscription off after repeated errors.
+
+The weekly report email (`lib/intelligence.ts`) is sent through the old `stayful-voice-api` app's `/api/email/send`, so don't pause or delete that Vercel project until the email moves.
 
 ## MCP integrations (Claude tool-use)
 
@@ -85,10 +102,10 @@ certainly not set in Vercel.
    bundle at build time, so changing it requires a redeploy.
 2. **NewsAPI free tier.** Doesn't work on Vercel — you need the paid
    plan ($449/mo last we checked) or swap to a different feed source.
-3. **Two voices.** `/api/speak` picks the ElevenLabs voice by persona.
-   Until `ELEVENLABS_VOICE_ID_JARVIS` and `ELEVENLABS_VOICE_ID_JANET` are
-   both set, whichever is missing falls back to `ELEVENLABS_VOICE_ID`, so
-   both people may sound the same. The old client-side streaming path
+3. **Two voices.** `/api/speak` picks the ElevenLabs voice by persona:
+   JARVIS from `ELEVENLABS_VOICE_ID_JARVIS` then `ELEVENLABS_VOICE_ID`;
+   Janet from `ELEVENLABS_VOICE_ID_JANET`, then `NEXT_PUBLIC_JANET_VOICE_ID`,
+   then `ELEVENLABS_VOICE_ID`. The old client-side streaming path
    (`NEXT_PUBLIC_ELEVENLABS_*`) has been removed; speech now streams
    sentence by sentence through the proxy.
 4. **`process.env.NEXT_PUBLIC_*`** values are inlined at **build time**.

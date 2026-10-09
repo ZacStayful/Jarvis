@@ -14,6 +14,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Message, TextMessage, ApprovalMessage } from '@/types/jarvis';
 import { ApprovalCard } from './ApprovalCard';
+import { DIRECTORS, hasSpeakerTags, splitBySpeaker } from '@/lib/ads/speakers';
 
 // ─── Markdown-lite renderer ───────────────────────────────────────────────────
 // A lightweight renderer for JARVIS responses — handles bold, code, lists.
@@ -192,6 +193,25 @@ function renderInline(text: string): React.ReactNode {
   );
 }
 
+// ─── Tagged (multi-speaker) replies ───────────────────────────────────────────
+// A marketing-department reply may carry inline [JARVIS]/[JANET] tags. Each
+// part gets its director's label; the message-level speaker label is
+// skipped for these.
+
+function renderTaggedContent(text: string): React.ReactNode {
+  return splitBySpeaker(text).map((part, i) => (
+    <div key={i} className={i > 0 ? 'mt-3' : undefined}>
+      <div
+        className="text-xs font-mono mb-1 tracking-wider"
+        style={{ color: DIRECTORS[part.speaker].colour }}
+      >
+        {DIRECTORS[part.speaker].label}
+      </div>
+      {renderContent(part.text)}
+    </div>
+  ));
+}
+
 // ─── Streaming cursor ─────────────────────────────────────────────────────────
 
 function StreamingCursor() {
@@ -219,6 +239,7 @@ function JARVISBubble({
 }: {
   message: TextMessage;
 }) {
+  const tagged = hasSpeakerTags(message.content);
   return (
     <div className="flex gap-3">
       {/* JARVIS indicator */}
@@ -229,8 +250,8 @@ function JARVISBubble({
       </div>
 
       <div className="flex-1 min-w-0">
-        {/* Speaker label */}
-        {!message.isStreaming && (
+        {/* Speaker label — tagged replies label each part instead */}
+        {!message.isStreaming && !tagged && (
           <div className="text-xs text-zinc-600 font-mono mb-1.5 tracking-wider">
             {speakerLabel(message.speaker)}
             {message.model?.includes('opus') ? ' · DEEP' : ''}
@@ -239,7 +260,7 @@ function JARVISBubble({
 
         {/* Content */}
         <div className="prose prose-invert prose-sm max-w-none">
-          {renderContent(message.content)}
+          {tagged ? renderTaggedContent(message.content) : renderContent(message.content)}
           {message.isStreaming && <StreamingCursor />}
         </div>
 

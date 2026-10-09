@@ -49,6 +49,12 @@ describe('speech-chunks', () => {
     expect(r.chunks).toEqual(['Drafted, sir.']);
   });
 
+  it('never reads speaker tags aloud', () => {
+    expect(stripMarkdownForSpeech('[JARVIS]\nAs of Friday, £24.\n[JANET]\nTwo briefs ready.')).toBe(
+      'As of Friday, £24. Two briefs ready.'
+    );
+  });
+
   it('strips markdown', () => {
     expect(stripMarkdownForSpeech('## Title\n- **Bold** item\n1. first `code`')).toBe(
       'Title Bold item first code'
@@ -133,6 +139,15 @@ describe('system prompt', () => {
     expect(withView).toMatch(/\nLIVE VIEW DATA\n/);
     expect(withView).toContain('already spoken a one-line acknowledgement');
     expect(withView).toContain('Pipeline: 12 leads');
+  });
+
+  it('adds the marketing department rules only with a context block', () => {
+    const plain = buildSystemPrompt({ now, persona: 'janet' });
+    expect(plain).not.toMatch(/\nMARKETING DEPARTMENT\n/);
+    const withCtx = buildSystemPrompt({ now, persona: 'janet', marketingContext: '=== MARKETING CONTEXT ===\nx' });
+    expect(withCtx).toMatch(/\nMARKETING DEPARTMENT\n/);
+    expect(withCtx).toContain('£27');
+    expect(withCtx).toContain('Never use [JARVIS] / [JANET] text tags');
   });
 
   it('puts the current time last', () => {

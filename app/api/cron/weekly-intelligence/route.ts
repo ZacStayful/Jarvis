@@ -15,10 +15,13 @@ export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  // middleware.ts lets this route through without a login, so this check is
+  // the only guard: refuse outright if CRON_SECRET isn't configured.
   const authHeader = req.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
   if (
     process.env.NODE_ENV === 'production' &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+    (!cronSecret || authHeader !== `Bearer ${cronSecret}`)
   ) {
     return new Response('Unauthorized', { status: 401 });
   }

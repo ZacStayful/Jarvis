@@ -7,6 +7,7 @@ export type Expected =
   | { kind: 'portfolio' }
   | { kind: 'investment' }
   | { kind: 'sales' }
+  | { kind: 'marketing' }
   | { kind: 'pane'; view: string }
   | { kind: 'presence' }
   | { kind: 'persona'; persona: 'jarvis' | 'janet'; remainder?: string }
@@ -28,6 +29,10 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: 'open portfolio', expect: { kind: 'portfolio' } },
   { text: 'show my holdings', expect: { kind: 'portfolio' } },
   { text: 'open the investment dashboard', expect: { kind: 'investment' } },
+  { text: 'how are the ads doing?', expect: { kind: 'marketing' } },
+  { text: 'department briefing', expect: { kind: 'marketing' } },
+  { text: 'which ads are getting weaker?', expect: { kind: 'marketing' } },
+  { text: 'should we scale the budget', expect: { kind: 'marketing' } },
   { text: 'open tasks', expect: { kind: 'pane', view: 'tasks' } },
   { text: 'show the command centre', expect: { kind: 'pane', view: 'command' } },
   { text: 'are you there?', expect: { kind: 'presence' } },

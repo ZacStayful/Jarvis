@@ -21,6 +21,15 @@
 // All view routing is decided on the client; the body tells us which view is
 // open (`activeView`) so the prompt can reflect it.
 //
+// Marketing department: Janet always gets the MARKETING CONTEXT block
+// (read-only stayful-ads data); JARVIS gets it for a marketing question or
+// while the marketing view is open, so follow-ups keep the data.
+//
+// MCP connector (beta mcp-client-2025-11-20): each server in mcp_servers
+// needs a matching mcp_toolset entry in tools. If a request with MCP servers
+// fails (expired token, server down), it is retried once without them so a
+// broken integration never silences the reply.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest } from 'next/server';
@@ -32,6 +41,8 @@ import {
   PORTFOLIO_SYSTEM_CONTEXT,
 } from '@/lib/portfolio/commands';
 import { getPersona, isPersonaId, DEFAULT_PERSONA } from '@/lib/personas';
+import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
+import { buildMarketingContext } from '@/lib/ads/department';
 import type { ApiMessage, InputMode, PersonaId } from '@/types/jarvis';
 
 export const runtime = 'edge';
@@ -155,36 +166,54 @@ interface TurnResult {
   error?: string;
 }
 
+async function readError(res: Response): Promise<string> {
+  const errorText = await res.text();
+  try {
+    return JSON.parse(errorText).error?.message ?? `Anthropic API error ${res.status}`;
+  } catch {
+    return errorText || `Anthropic API error ${res.status}`;
+  }
+}
+
 async function streamTurn(p: TurnParams): Promise<TurnResult> {
   const gate = new TextGate(text => p.send({ type: 'text', text }));
 
-  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': p.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'mcp-client-2025-04-04',
-    },
-    body: JSON.stringify({
-      model: p.model,
-      max_tokens: p.maxTokens,
-      system: p.system,
-      messages: p.messages,
-      stream: true,
-      ...(p.mcpServers.length > 0 && { mcp_servers: p.mcpServers }),
-    }),
-  });
+  const callAnthropic = (withMcp: boolean) =>
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': p.apiKey,
+        'anthropic-version': '2023-06-01',
+        ...(withMcp && { 'anthropic-beta': 'mcp-client-2025-11-20' }),
+      },
+      body: JSON.stringify({
+        model: p.model,
+        max_tokens: p.maxTokens,
+        system: p.system,
+        messages: p.messages,
+        stream: true,
+        ...(withMcp && {
+          mcp_servers: p.mcpServers,
+          tools: p.mcpServers.map(s => ({ type: 'mcp_toolset', mcp_server_name: s.name })),
+        }),
+      }),
+    });
+
+  let anthropicRes = await callAnthropic(p.mcpServers.length > 0);
+
+  // A broken integration (expired token, server down) shouldn't silence the
+  // reply: retry once without the MCP servers.
+  if (!anthropicRes.ok && p.mcpServers.length > 0) {
+    console.error(
+      `[chat] Anthropic ${anthropicRes.status} with MCP servers (${p.mcpServers.map(s => s.name).join(', ')}): ${await readError(anthropicRes)} — retrying without them`
+    );
+    anthropicRes = await callAnthropic(false);
+  }
 
   if (!anthropicRes.ok) {
-    const errorText = await anthropicRes.text();
-    let errorMessage = `Anthropic API error ${anthropicRes.status}`;
-    try {
-      const errorJson = JSON.parse(errorText);
-      errorMessage = errorJson.error?.message ?? errorMessage;
-    } catch {
-      errorMessage = errorText || errorMessage;
-    }
+    const errorMessage = await readError(anthropicRes);
+    console.error(`[chat] Anthropic ${anthropicRes.status} (${p.model}): ${errorMessage}`);
     return { text: '', handoff: null, error: errorMessage };
   }
 
@@ -225,7 +254,9 @@ async function streamTurn(p: TurnParams): Promise<TurnResult> {
 
     if (eventType === 'error') {
       const errDetails = event.error as Record<string, unknown> | undefined;
-      return (errDetails?.message as string) ?? 'Stream error';
+      const message = (errDetails?.message as string) ?? 'Stream error';
+      console.error(`[chat] Anthropic stream error (${p.model}): ${message}`);
+      return message;
     }
 
     return 'continue';
@@ -295,7 +326,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    messages = Array.isArray(body.messages) ? body.messages : [];
+    // Belt and braces with the client: Anthropic rejects empty content, and
+    // one empty assistant turn would break every later request.
+    messages = (Array.isArray(body.messages) ? (body.messages as ApiMessage[]) : []).filter(
+      m => typeof m.content === 'string' && m.content.trim() !== ''
+    );
     deep = body.deep === true;
     maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : deep ? 4096 : 2048;
     crossSessionContext =
@@ -358,7 +393,25 @@ export async function POST(req: NextRequest) {
     crossSessionContext ?? null,
   ];
 
-  const systemFor = (who: PersonaId, handoffNote?: string) =>
+  // Marketing department data (read-only stayful-ads). Janet always has it;
+  // JARVIS gets it for a marketing question or while the department view is
+  // open so follow-ups keep the data. Scoped to the speaker's files.
+  const marketingViewOpen = activeView === 'marketing-department';
+  const marketingIntent =
+    !!lastUserMessage && !isApprovalTurn && detectMarketingCommand(lastUserMessage.content);
+  const marketingContextFor = async (who: PersonaId): Promise<string | null> => {
+    if (isApprovalTurn) return null;
+    if (who !== 'janet' && !marketingIntent && !marketingViewOpen) return null;
+    const addressed =
+      who === 'janet'
+        ? 'janet'
+        : lastUserMessage && detectAddressedDirector(lastUserMessage.content) === 'both'
+        ? 'both'
+        : 'jarvis';
+    return buildMarketingContext(addressed);
+  };
+
+  const systemFor = async (who: PersonaId, handoffNote?: string) =>
     buildSystemPrompt({
       persona: who,
       missingIntegrations,
@@ -369,6 +422,7 @@ export async function POST(req: NextRequest) {
       viewContext,
       extraContext,
       handoffNote,
+      marketingContext: await marketingContextFor(who),
     });
 
   const model = deep ? OPUS_MODEL : SONNET_MODEL;
@@ -398,7 +452,7 @@ export async function POST(req: NextRequest) {
           apiKey,
           model,
           maxTokens,
-          system: systemFor(persona),
+          system: await systemFor(persona),
           messages,
           mcpServers,
           send,
@@ -430,7 +484,7 @@ export async function POST(req: NextRequest) {
             apiKey,
             model,
             maxTokens,
-            system: systemFor(to.id, handoff.brief || 'over to you'),
+            system: await systemFor(to.id, handoff.brief || 'over to you'),
             messages: hopMessages,
             mcpServers,
             send,
@@ -447,6 +501,7 @@ export async function POST(req: NextRequest) {
         close();
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[chat] ${message}`);
         send({ type: 'error', message });
         close();
       }

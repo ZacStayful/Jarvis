@@ -1,6 +1,7 @@
 "use client";
 
 import { C } from "@/lib/jarvis-design";
+import { DIRECTORS, hasSpeakerTags, splitBySpeaker } from "@/lib/ads/speakers";
 
 interface BubbleMessage {
   role: "user" | "assistant";
@@ -11,6 +12,25 @@ interface BubbleMessage {
 
 export function Bubble({ msg }: { msg: BubbleMessage }) {
   const isUser = msg.role === "user";
+  // Each assistant message carries its speaker. A marketing-department reply
+  // may additionally carry inline [JARVIS]/[JANET] tags (lib/ads/speakers.ts);
+  // those get a label per part.
+  const sections = isUser
+    ? [{ label: null as string | null, colour: C.primary, text: msg.content }]
+    : hasSpeakerTags(msg.content)
+    ? splitBySpeaker(msg.content).map((p) => ({
+        label: DIRECTORS[p.speaker].label,
+        colour: DIRECTORS[p.speaker].colour,
+        text: p.text,
+      }))
+    : [
+        {
+          label: DIRECTORS[msg.speaker ?? "jarvis"].label,
+          colour: DIRECTORS[msg.speaker ?? "jarvis"].colour,
+          text: msg.content,
+        },
+      ];
+
   return (
     <div
       style={{
@@ -30,28 +50,32 @@ export function Bubble({ msg }: { msg: BubbleMessage }) {
           color: C.text,
         }}
       >
-        {!isUser && (
-          <div
-            className="orb"
-            style={{ fontSize: 8, color: C.primary, letterSpacing: "0.18em", marginBottom: 5 }}
-          >
-            {msg.speaker === "janet" ? "JANET" : "JARVIS"}
+        {sections.map((section, i) => (
+          <div key={i} style={{ marginTop: i > 0 ? 10 : 0 }}>
+            {section.label && (
+              <div
+                className="orb"
+                style={{ fontSize: 8, color: section.colour, letterSpacing: "0.18em", marginBottom: 5 }}
+              >
+                {section.label}
+              </div>
+            )}
+            <p
+              className="raj"
+              style={{
+                fontSize: 13,
+                lineHeight: 1.55,
+                fontWeight: isUser ? 400 : 300,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {section.text}
+              {msg.isStreaming && i === sections.length - 1 && (
+                <span style={{ color: C.bright, marginLeft: 2 }}>▊</span>
+              )}
+            </p>
           </div>
-        )}
-        <p
-          className="raj"
-          style={{
-            fontSize: 13,
-            lineHeight: 1.55,
-            fontWeight: isUser ? 400 : 300,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {msg.content}
-          {msg.isStreaming && (
-            <span style={{ color: C.bright, marginLeft: 2 }}>▊</span>
-          )}
-        </p>
+        ))}
       </div>
     </div>
   );

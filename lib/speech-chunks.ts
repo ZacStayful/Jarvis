@@ -7,6 +7,8 @@
 /** Strip markdown so it isn't read aloud as punctuation. */
 export function stripMarkdownForSpeech(text: string): string {
   return text
+    .replace(/^[ \t]*\[(JARVIS|JANET)\][ \t]*$/gim, '') // speaker tags (lib/ads/speakers.ts)
+    .replace(/\[(JARVIS|JANET)\]/g, ' ')
     .replace(/```[\s\S]*?```/g, ' ')          // fenced code
     .replace(/^#{1,6}\s+/gm, '')              // headings
     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')  // bold / italic

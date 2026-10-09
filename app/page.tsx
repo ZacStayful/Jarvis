@@ -18,7 +18,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
-import type { ViewRoute } from "@/lib/commandRouter";
+import { detectAddressedDirector, detectMarketingCommand, type ViewRoute } from "@/lib/commandRouter";
 import { useJARVIS } from "@/hooks/useJARVIS";
 import { useCrossSessionContext } from "@/hooks/useCrossSessionContext";
 import type { InputMode, JARVISState, Message, PersonaId } from "@/types/jarvis";
@@ -57,6 +57,7 @@ import { Bubble } from "@/components/jarvis/Bubble";
 import { MessageRenderer } from "@/components/MessageRenderer";
 import NewsBriefingView from "@/components/views/NewsBriefingView";
 import InvestmentDashboardView from "@/components/views/InvestmentDashboardView";
+import { MarketingDepartmentView } from "@/components/views/MarketingDepartmentView";
 import {
   CommandView,
   ConversationView,
@@ -581,6 +582,32 @@ export default function JarvisPage() {
     [say, addLocalAssistantMessage]
   );
 
+  // Marketing department — "how are the ads doing?", "which ads are
+  // weakening?", "department briefing". Runs before the news handler because
+  // "briefing" would otherwise be read as a news request. Opens the
+  // department view (read-only stayful-ads data beside the chat) and routes
+  // the question to Janet unless JARVIS was named: the ads are her remit,
+  // the budget and scaling decision his, and either hands over as needed.
+  const handleMarketingRequest = (
+    text: string,
+    persona: PersonaId
+  ): { persona: PersonaId; justOpened: boolean } | null => {
+    if (!detectMarketingCommand(text)) return null;
+    const addressed = detectAddressedDirector(text);
+    const who: PersonaId = addressed === "jarvis" ? "jarvis" : addressed === "janet" ? "janet" : persona === "jarvis" ? "janet" : persona;
+    let justOpened = false;
+    if (routedView !== "marketing-department") {
+      clearAllViews();
+      setRoutedView("marketing-department");
+      justOpened = true;
+    }
+    if (who !== persona) switchPersona(who, false);
+    if (justOpened && !muted) {
+      speak(who === "janet" ? "Pulling up the department, Zac." : "Opening the marketing department, sir.", who);
+    }
+    return { persona: who, justOpened };
+  };
+
   // Intercept transcripts while the news briefing view is mounted.
   // Handles stop/no-more interruptions during summary playback.
   const handleNewsConversation = (text: string): boolean => {
@@ -773,6 +800,8 @@ export default function JarvisPage() {
   //     ↓
   //   presence check ("are you there?")           → instant local line
   //     ↓
+  //   marketing request ("how are the ads doing?") → department view + Janet/JARVIS
+  //     ↓
   //   news request / news conversation           → local news flow
   //     ↓
   //   nav intents (sales, portfolio, lucy, investments, panes)
@@ -802,6 +831,17 @@ export default function JarvisPage() {
 
     if (isPresenceCheck(message)) {
       say(presenceResponse(persona), persona);
+      return;
+    }
+
+    const marketing = handleMarketingRequest(message, persona);
+    if (marketing) {
+      sendMessage(message, false, {
+        inputMode,
+        persona: marketing.persona,
+        activeView: "marketing-department",
+        viewJustOpened: marketing.justOpened,
+      });
       return;
     }
 
@@ -955,6 +995,8 @@ export default function JarvisPage() {
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <LucyView />
           </div>
+        ) : routedView === "marketing-department" ? (
+          <MarketingDepartmentView messages={messages} state={state} feedRef={feedRef} />
         ) : routedView === "news-briefing" ? (
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             <NewsBriefingView

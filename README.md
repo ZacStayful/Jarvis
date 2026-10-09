@@ -112,6 +112,7 @@ jarvis → cname.vercel-dns.com
 | 6 — Learning | ⬜ | Transcript logging, Obsidian sync, end-of-day summaries |
 | 7 — Lucy Loop | ⬜ | Lucy triggering, post-call data ingestion |
 | 8 — Polish | ⬜ | Session memory, cross-session context, performance |
+| 9 — Marketing department | 🟡 Preview | Talk to Jarvis (marketing director) and Janet (creative director) by voice or text; read-only view of the `stayful-ads` weekly snapshot and brief pipeline |
 
 ---
 
@@ -123,7 +124,7 @@ Set in Vercel dashboard → Project → Settings → Environment Variables:
 ANTHROPIC_API_KEY=
 JARVIS_PASSWORD=
 SESSION_SECRET=
-ASSEMBLYAI_API_KEY=4610edab175d4b29a43ac9d60dee2cd9
+ASSEMBLYAI_API_KEY=
 ELEVENLABS_API_KEY=        (Phase 2)
 ELEVENLABS_VOICE_ID=       (Phase 2)
 ```

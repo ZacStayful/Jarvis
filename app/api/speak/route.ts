@@ -3,17 +3,30 @@ import { getPersona } from '@/lib/personas';
 
 export const runtime = 'edge';
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+// Tolerate stray quotes or spaces pasted into the Vercel value.
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY?.trim().replace(/^["']+|["']+$/g, '').trim();
 const ELEVENLABS_MODEL = 'eleven_turbo_v2_5';
 
-// Each member of staff has their own ElevenLabs voice:
-//   ELEVENLABS_VOICE_ID_JARVIS, ELEVENLABS_VOICE_ID_JANET
-// Either falls back to ELEVENLABS_VOICE_ID (the original single-voice var)
-// so the app keeps speaking while the second id is being set up.
+// The shape of the configured key, for diagnosing a rejected key without
+// ever logging the key itself.
+function describeKey(raw: string | undefined): string {
+  const v = raw ?? '';
+  return `length ${v.length}, starts with sk_: ${v.replace(/^[\s"']+/, '').startsWith('sk_')}, quotes: ${/["']/.test(v)}, whitespace: ${/\s/.test(v)}`;
+}
+
+// Each member of staff has their own ElevenLabs voice. The persona lists its
+// env vars in priority order (lib/personas.ts): JARVIS reads
+// ELEVENLABS_VOICE_ID_JARVIS then ELEVENLABS_VOICE_ID; Janet reads
+// ELEVENLABS_VOICE_ID_JANET, then NEXT_PUBLIC_JANET_VOICE_ID (the var the
+// marketing department shipped with), then ELEVENLABS_VOICE_ID.
 function resolveVoiceId(personaId: string | undefined, explicit?: string): string | undefined {
   if (explicit) return explicit;
   const persona = getPersona(personaId);
-  return process.env[persona.voiceEnvKey] || process.env.ELEVENLABS_VOICE_ID || undefined;
+  for (const key of persona.voiceEnvKeys) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return undefined;
 }
 
 export async function POST(req: NextRequest) {
@@ -40,7 +53,7 @@ export async function POST(req: NextRequest) {
     const voice = resolveVoiceId(personaId, voiceId);
     if (!voice) {
       console.error(
-        `TTS error: no voice id for ${persona.name} (set ${persona.voiceEnvKey} or ELEVENLABS_VOICE_ID)`
+        `TTS error: no voice id for ${persona.name} (set one of ${persona.voiceEnvKeys.join(', ')})`
       );
       return NextResponse.json(
         { error: `No voice id configured for ${persona.name}` },
@@ -75,7 +88,14 @@ export async function POST(req: NextRequest) {
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
-      console.error('ElevenLabs error:', upstream.status, detail);
+      console.error(
+        'ElevenLabs error:',
+        upstream.status,
+        detail,
+        upstream.status === 401 || upstream.status === 400
+          ? `| ELEVENLABS_API_KEY as set: ${describeKey(process.env.ELEVENLABS_API_KEY)}`
+          : ''
+      );
       return NextResponse.json(
         { error: 'TTS upstream failed', status: upstream.status },
         { status: 502 }

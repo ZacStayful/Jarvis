@@ -8,6 +8,7 @@
 //   completed      → marks completion + posts an item update
 
 import { NextRequest, NextResponse } from 'next/server';
+import { bodyTooLarge, isMondayItemId, isOptionalInt } from '@/lib/public-lead-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (bodyTooLarge(req)) {
+    return NextResponse.json({ error: 'Body too large' }, { status: 413, headers: CORS_HEADERS });
+  }
+
   let body: {
     monday_item_id?: string | number;
     event?: 'viewed' | 'slide_viewed' | 'completed';
@@ -54,6 +59,17 @@ export async function POST(req: NextRequest) {
       { error: 'Missing monday_item_id or event' },
       { status: 400, headers: CORS_HEADERS },
     );
+  }
+
+  // Public route (called from the lead's browser): numeric item ID, a known
+  // event and sane slide numbers.
+  if (
+    !isMondayItemId(monday_item_id) ||
+    !['viewed', 'slide_viewed', 'completed'].includes(event) ||
+    !isOptionalInt(slide, 0, 500) ||
+    !isOptionalInt(total, 0, 500)
+  ) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400, headers: CORS_HEADERS });
   }
 
   const now = new Date();

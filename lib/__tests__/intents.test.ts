@@ -16,6 +16,7 @@ import { detectPortfolioCommand } from '@/lib/portfolio/commands';
 import { detectSalesCommand, isSalesQuestion } from '@/lib/sales/commands';
 import { detectInvestmentCommand } from '@/lib/investment-commands';
 import { detectPersonaSwitch } from '@/lib/persona-commands';
+import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
 
 describe('intent-utils', () => {
   it('normalises wake words and politeness', () => {
@@ -50,6 +51,7 @@ describe('local routing against the shared utterance table', () => {
       const sales = detectSalesCommand(text);
       const investment = detectInvestmentCommand(text);
       const pane = routeCommand(text);
+      const marketing = detectMarketingCommand(text);
 
       const fired = {
         presence,
@@ -60,6 +62,7 @@ describe('local routing against the shared utterance table', () => {
         sales: sales === 'navigate',
         investment: !!investment,
         pane,
+        marketing,
       };
 
       switch (want.kind) {
@@ -86,6 +89,9 @@ describe('local routing against the shared utterance table', () => {
         case 'investment':
           expect(fired.investment).toBe(true);
           break;
+        case 'marketing':
+          expect(fired.marketing).toBe(true);
+          break;
         case 'pane':
           expect(fired.pane).toBe(want.view);
           break;
@@ -99,6 +105,7 @@ describe('local routing against the shared utterance table', () => {
             sales: false,
             investment: false,
             pane: null,
+            marketing: false,
           });
           break;
       }
@@ -138,6 +145,20 @@ describe('sales', () => {
     expect(isSalesQuestion('how many no shows this month')).toBe(true);
     expect(isSalesQuestion("what's the capital of Peru")).toBe(false);
     expect(isSalesQuestion("I'll get back to him")).toBe(false);
+  });
+});
+
+describe('marketing department', () => {
+  it('scopes the context by who was addressed', () => {
+    expect(detectAddressedDirector('Janet, which ads are weakening?')).toBe('janet');
+    expect(detectAddressedDirector('Jarvis, should we scale the budget?')).toBe('jarvis');
+    expect(detectAddressedDirector('Jarvis, what are we building next?')).toBe('both');
+    expect(detectAddressedDirector('how are the ads doing?')).toBe('both');
+  });
+
+  it('a name alone is not a marketing question', () => {
+    expect(detectMarketingCommand('Janet mentioned the hook yesterday')).toBe(false);
+    expect(detectMarketingCommand('is Janet there?')).toBe(false);
   });
 });
 

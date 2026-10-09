@@ -65,6 +65,24 @@ person is a data change.
 - Dashboards (sales, news, Lucy, portfolio, investments) are JARVIS's;
   opening one switches to him silently.
 
+**Marketing department** (shipped by the sibling PR, kept as the data layer):
+- Read-only view of the private `ZacStayful/stayful-ads` repo:
+  `lib/ads/department.ts` (server only, `STAYFUL_ADS_GITHUB_TOKEN`, 1h
+  cache), `/api/marketing`, `components/views/MarketingDepartmentView.tsx`.
+  Never commit ad data here; never call Meta; never write to stayful-ads.
+- `detectMarketingCommand` (`lib/commandRouter.ts`) runs in the chain
+  before news ("department briefing" would otherwise open the news). It
+  opens the view and routes to Janet unless JARVIS was named. Neither name
+  is a marketing pattern — addressing is `persona-commands`.
+- `/api/chat` attaches the MARKETING CONTEXT block (+ the MARKETING
+  DEPARTMENT rules in the prompt) for Janet always, and for JARVIS on a
+  marketing question or while `activeView === 'marketing-department'`.
+  Janet owns the ads and their performance; JARVIS owns budget and the
+  scaling decision; they hand over with the `<handoff>` tag, never inline
+  `[JARVIS]`/`[JANET]` tags. If a reply still carries tags, `lib/ads/speakers.ts`
+  labels the parts in the bubbles and `stripMarkdownForSpeech` drops them
+  from speech.
+
 ---
 
 ## The utterance chain (the critical flow)
@@ -230,6 +248,21 @@ small talk or an off-tool topic is a clear request and gets answered in
 character. API errors become a spoken persona `errorLine` with the
 technical detail in `errorDetail` on the message (shown small, never
 spoken, never sent back to the API).
+
+---
+
+## API route security (middleware.ts)
+
+- Routes without the login cookie fall into three lists in `middleware.ts`:
+  `SERVICE_ROUTES` (Retell, n8n, Twilio, Resend, AssemblyAI, Calendly
+  functions — locked by `JARVIS_API_SECRET` via `x-jarvis-secret` / Bearer /
+  `?key=`, open until that env var is set) and `PUBLIC_LEAD_ROUTES` (leads'
+  browsers — open, so each route validates input with
+  `lib/public-lead-input.ts`) and `SELF_AUTHENTICATED_ROUTES` (`/api/cron`
+  checks `CRON_SECRET`, `/api/intelligence` checks HMAC-signed links,
+  `/api/calendly/webhook` checks Calendly's signature and must never 401 —
+  Calendly disables subscriptions after repeated errors). A new no-login
+  route goes in one of the three lists; never add a bare bypass.
 
 ---
 
