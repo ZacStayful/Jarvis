@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
           )
           .join('\n\n');
 
-        const extractionPrompt = `You are JARVIS's intelligence extraction engine. Given a conversation transcript between Zac (founder of Stayful, a short-term rental property management company) and his AI staff — JARVIS (managing director) and JANET (marketing creative director) — extract structured learnings. Keep attribution where it matters (e.g. "Janet proposed angle 7 for the next ad").
+        const extractionPrompt = `You are JARVIS's intelligence extraction engine. Given a conversation transcript between Zac (founder of Stayful, a short-term rental property management company) and his AI staff — JARVIS (managing director) and JANET (ad creative director) — extract structured learnings. Keep attribution where it matters (e.g. "Janet proposed angle 7 for the next ad").
 
 TRANSCRIPT:
 ${transcript}

@@ -118,6 +118,16 @@ export function handoverLine(persona: PersonaId | Persona, pick?: number): strin
   return pickFrom(resolve(persona).handoverLines, pick);
 }
 
+/**
+ * "Janet, ad creative director." — how someone names themself when one of
+ * Zac's actions (opening a view, asking about the ads) brings them in ahead
+ * of a nav ack. A switch always says who is now speaking and what they do.
+ */
+export function introLine(persona: PersonaId | Persona): string {
+  const p = resolve(persona);
+  return `${p.name}, ${p.title.toLowerCase()}.`;
+}
+
 export function presenceLine(persona: PersonaId | Persona, pick?: number): string {
   return pickFrom(resolve(persona).presenceResponses, pick);
 }
