@@ -43,6 +43,7 @@ import {
 import { getPersona, isPersonaId, DEFAULT_PERSONA } from '@/lib/personas';
 import { detectMarketingCommand, detectAddressedDirector } from '@/lib/commandRouter';
 import { buildMarketingContext } from '@/lib/ads/department';
+import { formatAdPerformanceForPrompt, getAdPerformance, isMetaConnected } from '@/lib/janet/meta';
 import type { ApiMessage, InputMode, PersonaId } from '@/types/jarvis';
 
 export const runtime = 'edge';
@@ -408,7 +409,11 @@ export async function POST(req: NextRequest) {
         : lastUserMessage && detectAddressedDirector(lastUserMessage.content) === 'both'
         ? 'both'
         : 'jarvis';
-    return buildMarketingContext(addressed);
+    const context = await buildMarketingContext(addressed);
+    // Intra-week read from Meta, only when a token exists (lib/janet/meta.ts).
+    if (!isMetaConnected()) return context;
+    const live = formatAdPerformanceForPrompt(await getAdPerformance());
+    return live ? `${context}\n\n${live}` : context;
   };
 
   const systemFor = async (who: PersonaId, handoffNote?: string) =>

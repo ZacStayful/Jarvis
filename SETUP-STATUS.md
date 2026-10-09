@@ -44,6 +44,8 @@ Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h
 | Feature | What it needs (Vercel env) | Status |
 | --- | --- | --- |
 | Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it the view and the directors say the data is unavailable |
+| Janet queues an approved brief (row in `briefs/queue.csv`, build sheet `briefs/B###.md`, dated line in `DECISIONS.md`) and dispatches a build | `STAYFUL_ADS_GITHUB_WRITE_TOKEN` — fine-grained token, only `stayful-ads`, Contents **read/write** and Actions read/write (the read-only token above is not enough; without this the approval card fails with a clear message). Optional `STAYFUL_ADS_BUILD_WORKFLOW` (default `build-ad.yml`; until that workflow exists in stayful-ads, "build" says the pipeline isn't connected) | 🔴 — not set |
+| Live ad performance for Janet ("which ads are weakening?" between Friday reviews) | `META_ACCESS_TOKEN` (System User token, `ads_read`), `META_AD_ACCOUNT_ID` (`act_…`), optional `META_GRAPH_VERSION` | 🔴 — not set; Janet answers from the weekly snapshot's verdicts and says the live feed isn't connected |
 | Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's); `/api/speak` reads it server-side by persona, so it no longer needs to be inlined | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice |
 
 ## API route security

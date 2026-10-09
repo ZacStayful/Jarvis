@@ -58,6 +58,16 @@ type FileResult = { ok: true; text: string } | { ok: false; error: string };
 const fileCache = new Map<string, { text: string; fetchedAt: number }>();
 const inflight = new Map<string, Promise<FileResult>>();
 
+// Next's data-cache tag for every stayful-ads read; the writer in
+// lib/janet/ads-writer.ts revalidates it after a commit.
+export const ADS_CACHE_TAG = 'stayful-ads';
+
+/** Drop the in-memory copy of a file (or all files) after a write. */
+export function invalidateAdsCache(path?: string): void {
+  if (path) fileCache.delete(path);
+  else fileCache.clear();
+}
+
 async function fetchAdsFile(path: string): Promise<FileResult> {
   const token = process.env.STAYFUL_ADS_GITHUB_TOKEN;
   if (!token) return { ok: false, error: TOKEN_MISSING_ERROR };
@@ -80,7 +90,7 @@ async function fetchAdsFile(path: string): Promise<FileResult> {
             Accept: 'application/vnd.github.raw',
             'X-GitHub-Api-Version': '2022-11-28',
           },
-          next: { revalidate: CACHE_TTL_MS / 1000 },
+          next: { revalidate: CACHE_TTL_MS / 1000, tags: [ADS_CACHE_TAG] },
         }
       );
       if (res.status === 404) {
