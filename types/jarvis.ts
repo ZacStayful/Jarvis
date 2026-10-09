@@ -4,7 +4,7 @@ export type JARVISState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 // ─── Staff ────────────────────────────────────────────────────────────────────
 // Two members of staff share one conversation: JARVIS (managing director) and
-// Janet (marketing creative director). Every assistant message records who
+// Janet (ad creative director). Every assistant message records who
 // spoke so the UI can label it and speak it in the right voice.
 
 export type PersonaId = 'jarvis' | 'janet';

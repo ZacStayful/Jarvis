@@ -42,8 +42,14 @@ Zac talks to a two-person team that shares one conversation:
 
 - **JARVIS** — managing director. Operations, pipeline, Lucy, Monday,
   calendar, email, investments, news, decisions. Opens every session.
-- **Janet** — marketing creative director. Ads, angles, creative, copy,
+- **Janet** — ad creative director. Ads, angles, creative, copy,
   web-meeting evidence, campaign performance. Calm, measured, precise.
+
+Whoever comes in names themself **and their job title** (Zac's rule):
+`handoverLines` on a toggle/voice switch, `introLine` ahead of a nav ack
+when opening a view changes the speaker (`ackAs` in `app/page.tsx`), and
+the HAND-OFF prompt block for server hand-offs. `persona.title` is the one
+source for the title text.
 
 Everything that differs between them is data in `lib/personas.ts`
 (identity prompt, remit, greeting banks, handover/presence/thinking

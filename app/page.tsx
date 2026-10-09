@@ -47,7 +47,7 @@ import { isLikelyEcho } from "@/lib/voice-echo-filter";
 import { isCommandShaped } from "@/lib/intent-utils";
 import { detectPersonaSwitch } from "@/lib/persona-commands";
 import { DEFAULT_PERSONA, PERSONAS, PERSONA_IDS } from "@/lib/personas";
-import { buildGreeting, handoverLine, thinkingLine, NEWS_FEED_DOWN_LINE } from "@/lib/jarvis-lines";
+import { buildGreeting, handoverLine, introLine, thinkingLine, NEWS_FEED_DOWN_LINE } from "@/lib/jarvis-lines";
 import { nextSpeakableChunks } from "@/lib/speech-chunks";
 import { LucyView } from "@/views/LucyView";
 import { SalesDashboard } from "@/components/sales/SalesDashboard";
@@ -113,12 +113,24 @@ export default function JarvisPage() {
   const mountedAtRef = useRef<number>(Date.now());
 
   // ── Staff: who Zac is talking to ──────────────────────────────────────────
-  // JARVIS (managing director) opens every session; Janet (marketing
-  // creative director) is brought in by name, by the header toggle, or by a
-  // hand-off from JARVIS. See lib/personas.ts.
+  // JARVIS (managing director) opens every session; Janet (ad creative
+  // director) is brought in by name, by the header toggle, or by a hand-off
+  // from JARVIS. Whoever comes in names themself and their title. See
+  // lib/personas.ts.
   const [activePersona, setActivePersona] = useState<PersonaId>(DEFAULT_PERSONA);
   const activePersonaRef = useRef<PersonaId>(DEFAULT_PERSONA);
   activePersonaRef.current = activePersona;
+
+  // Set when Zac switches person by voice *and* keeps talking ("Janet, how
+  // are the ads doing?"). The full handover line would be cut off by the
+  // ack or the reply, so the newcomer opens the next local line (or the
+  // reply) with introLine instead. Cleared at the start of every utterance.
+  const introPendingRef = useRef<PersonaId | null>(null);
+  const takeIntro = useCallback((who: PersonaId): string | null => {
+    if (introPendingRef.current !== who) return null;
+    introPendingRef.current = null;
+    return introLine(who);
+  }, []);
 
   // ── Voice output ──────────────────────────────────────────────────────────
   const lastSpeechEndedAtRef = useRef(0);
@@ -240,7 +252,8 @@ export default function JarvisPage() {
   const handleSalesVoiceQuery = useCallback(async (text: string) => {
     if (!salesMetrics) return;
     stopSpeaking();
-    speak(pick(QUERY_START), "jarvis");
+    const intro = takeIntro("jarvis");
+    speak(intro ? `${intro} ${pick(QUERY_START)}` : pick(QUERY_START), "jarvis");
     startLoadingMessages();
     try {
       const res = await fetch('/api/sales/summary', {
@@ -264,7 +277,7 @@ export default function JarvisPage() {
       stopLoadingMessages();
       speak("I encountered an error, sir. Please try again.", "jarvis");
     }
-  }, [salesMetrics, speak, enqueue, stopSpeaking, startLoadingMessages, stopLoadingMessages]);
+  }, [salesMetrics, speak, enqueue, stopSpeaking, startLoadingMessages, stopLoadingMessages, takeIntro]);
 
   const handleSectionFocus = useCallback(async (sectionId: string, metrics: any) => {
     stopSpeaking();
@@ -294,11 +307,13 @@ export default function JarvisPage() {
   // Add a UI-only line to the feed and say it, in one go.
   const say = useCallback(
     (text: string, speaker: PersonaId) => {
-      const id = addLocalAssistantMessage(text, speaker);
+      const intro = takeIntro(speaker);
+      const line = intro ? `${intro} ${text}` : text;
+      const id = addLocalAssistantMessage(line, speaker);
       spokenIdsRef.current.add(id);
-      speak(text, speaker);
+      speak(line, speaker);
     },
-    [addLocalAssistantMessage, speak]
+    [addLocalAssistantMessage, speak, takeIntro]
   );
 
   // News-conversation state: cached articles + controlled UI filter.
@@ -597,15 +612,36 @@ export default function JarvisPage() {
   );
 
   // ── Staff switching ───────────────────────────────────────────────────────
+  // Returns true when the speaker actually changed. `announce` speaks the
+  // handover line (name + job title); the silent form is for callers that
+  // speak their own ack — see ackAs.
   const switchPersona = useCallback(
-    (next: PersonaId, announce = true) => {
-      if (next === activePersonaRef.current) return;
+    (next: PersonaId, announce = true): boolean => {
+      if (next === activePersonaRef.current) return false;
       setActivePersona(next);
       activePersonaRef.current = next;
       if (announce && !mutedRef.current) say(handoverLine(next), next);
       else if (announce) addLocalAssistantMessage(handoverLine(next), next);
+      return true;
     },
     [say, addLocalAssistantMessage]
+  );
+
+  // A nav ack spoken as `who`. If that changes who Zac is talking to, the
+  // newcomer names themself and their job title first: "Janet, ad creative
+  // director. Pulling up the department, Zac." Acks are spoken, not bubbled;
+  // muted, only the introduction lands in the feed.
+  const ackAs = useCallback(
+    (who: PersonaId, ack: string | null) => {
+      const intro = switchPersona(who, false) ? introLine(who) : takeIntro(who);
+      if (mutedRef.current) {
+        if (intro) addLocalAssistantMessage(intro, who);
+        return;
+      }
+      const line = [intro, ack].filter(Boolean).join(" ");
+      if (line) speak(line, who);
+    },
+    [switchPersona, addLocalAssistantMessage, speak, takeIntro]
   );
 
   // Marketing department — "how are the ads doing?", "which ads are
@@ -627,10 +663,12 @@ export default function JarvisPage() {
       setRoutedView("marketing-department");
       justOpened = true;
     }
-    if (who !== persona) switchPersona(who, false);
-    if (justOpened && !muted) {
-      speak(who === "janet" ? "Pulling up the department, Zac." : "Opening the marketing department, sir.", who);
-    }
+    ackAs(
+      who,
+      justOpened
+        ? who === "janet" ? "Pulling up the department, Zac." : "Opening the marketing department, sir."
+        : null
+    );
     return { persona: who, justOpened };
   };
 
@@ -703,21 +741,17 @@ export default function JarvisPage() {
       setNewsCategoriesFilter([category]);
       setNewsActiveCategory(category);
       setRoutedView("news-briefing");
-      switchPersona("jarvis", false);
-      if (!muted) speak(`Pulling up the latest ${categoryVoiceName(category)}, sir.`, "jarvis");
+      ackAs("jarvis", `Pulling up the latest ${categoryVoiceName(category)}, sir.`);
       return true;
     }
 
     // Case 2 — news intent, no category → ask which one
     if (hasNewsIntent) {
       awaitingNewsCategoryRef.current = true;
-      switchPersona("jarvis", false);
-      if (!muted) {
-        speak(
-          "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?",
-          "jarvis"
-        );
-      }
+      ackAs(
+        "jarvis",
+        "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?"
+      );
       return true;
     }
 
@@ -762,8 +796,7 @@ export default function JarvisPage() {
     if (sales === 'navigate') {
       clearAllViews();
       stopSpeaking();
-      switchPersona("jarvis", false);
-      speak(pick(SALES_OPEN), "jarvis");
+      ackAs("jarvis", pick(SALES_OPEN));
       setSalesOpen(true);
       startLoadingMessages();
       return { consumed: true }; // the dashboard narrates itself
@@ -810,11 +843,8 @@ export default function JarvisPage() {
 
     // These are all JARVIS's dashboards. The ack is instant; Claude's reply
     // is queued after it rather than muted (see the streaming effect).
-    if (openedView) switchPersona("jarvis", false);
-    if (ack && !muted) {
-      stopSpeaking();
-      speak(ack, "jarvis");
-    }
+    stopSpeaking();
+    ackAs("jarvis", ack);
     return { consumed: false, openedView, deep };
   };
 
@@ -847,11 +877,16 @@ export default function JarvisPage() {
     // Who is being spoken to?
     let persona = activePersonaRef.current;
     let message = trimmed;
+    introPendingRef.current = null;
     const sw = detectPersonaSwitch(trimmed, persona);
     if (sw) {
-      switchPersona(sw.persona, true);
+      // A bare "switch to Janet" gets the full handover line as the reply.
+      // With a question attached, the newcomer introduces themself in a few
+      // words at the front of whatever is said next (see takeIntro).
+      const switched = switchPersona(sw.persona, !sw.remainder);
       persona = sw.persona;
-      if (!sw.remainder) return; // bare switch — the handover line is the reply
+      if (!sw.remainder) return;
+      if (switched) introPendingRef.current = sw.persona;
       message = sw.remainder;
     }
 
@@ -883,6 +918,11 @@ export default function JarvisPage() {
     const viewNow = nav.openedView ?? currentViewId();
     const viewContext =
       viewNow === "sales-dashboard" ? buildSalesContextLine(salesMetrics) : undefined;
+
+    // "Janet, what do you make of this hook?" — nothing local spoke, so the
+    // introduction plays now and the reply queues behind it.
+    const intro = takeIntro(persona);
+    if (intro) say(intro, persona);
 
     sendMessage(message, nav.deep ?? false, {
       inputMode,

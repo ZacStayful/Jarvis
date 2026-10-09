@@ -5,7 +5,7 @@ import {
   stripMarkdownForSpeech,
   speakablePortion,
 } from '@/lib/speech-chunks';
-import { buildGreeting, localTimeParts, timeBandForHour, thinkingLine } from '@/lib/jarvis-lines';
+import { buildGreeting, localTimeParts, timeBandForHour, thinkingLine, handoverLine, introLine } from '@/lib/jarvis-lines';
 import { PERSONAS, PERSONA_IDS, getPersona } from '@/lib/personas';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
 
@@ -101,6 +101,21 @@ describe('jarvis-lines', () => {
       expect(thinkingLine(id, 0)).toBe(p.thinkingLines[0]);
     }
   });
+
+  it('a switch names the person and their job title', () => {
+    for (const id of PERSONA_IDS) {
+      const p = getPersona(id);
+      const title = p.title.toLowerCase();
+      for (const line of p.handoverLines) {
+        expect(line.toLowerCase()).toContain(p.name.toLowerCase());
+        expect(line.toLowerCase()).toContain(title);
+      }
+      expect(introLine(id)).toBe(`${p.name}, ${title}.`);
+    }
+    expect(handoverLine('janet', 0)).toContain('ad creative director');
+    expect(introLine('jarvis')).toBe('JARVIS, managing director.');
+    expect(introLine('janet')).toBe('Janet, ad creative director.');
+  });
 });
 
 describe('system prompt', () => {
@@ -110,10 +125,19 @@ describe('system prompt', () => {
     const p = buildSystemPrompt({ persona: 'jarvis', now });
     expect(p).not.toContain('not a general assistant');
     expect(p).toContain('managing director');
-    expect(p).toContain('marketing creative director');
+    expect(p).toContain('ad creative director');
     expect(p).toContain('WORKING TOGETHER');
     expect(p).toContain('<handoff to="janet">');
     expect(p).toContain('Friday');
+  });
+
+  it('a hand-off opens with the newcomer naming themself and their title', () => {
+    const p = buildSystemPrompt({ persona: 'janet', now, handoffNote: 'The photo ad is yours.' });
+    expect(p).toContain('HAND-OFF');
+    expect(p).toContain('"Janet, ad creative director."');
+    expect(buildSystemPrompt({ persona: 'jarvis', now, handoffNote: 'Budget call.' })).toContain(
+      '"JARVIS, managing director."'
+    );
   });
 
   it('follows the persona', () => {
