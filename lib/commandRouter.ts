@@ -1,14 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JARVIS view routes + marketing-department detection
+// JARVIS view routes + marketing-department and capacity detection
 //
 // The rich views that app/page.tsx can mount in the main panel. All routing
 // is decided on the client (see the utterance chain in app/page.tsx); the
 // chat route is told which view is open via `activeView` in the request
-// body and uses detectMarketingCommand / detectAddressedDirector only to
-// decide whether to attach the MARKETING CONTEXT block.
+// body and uses detectMarketingCommand / isCapacityQuestion /
+// detectAddressedDirector only to decide whether to attach the MARKETING
+// CONTEXT block.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Director } from '@/lib/ads/types';
+import { normalise } from '@/lib/intent-utils';
 
 export type ViewRoute =
   | 'marketing-department'
@@ -72,4 +74,49 @@ export function detectAddressedDirector(message: string): Director | 'both' {
   if (janet && !jarvis) return 'janet';
   if (jarvis && !janet && !CREATIVE_TOPIC.test(message)) return 'jarvis';
   return 'both';
+}
+
+// Lead-database capacity: how many buyers the landlord leads support, the
+// buyer enquiries and web meetings that takes, and the bottleneck. Answered
+// from the snapshot's `capacity` block, and it's JARVIS's (the budget and
+// scaling decision rest on it). Strict phrases only, matched anywhere; the
+// word "capacity" counts only beside leads/buyers/customers/meetings, so
+// "a meeting with a landlord about capacity at his flat" stays a sentence.
+const CAPACITY_PATTERNS = [
+  /\bbottlenecks?\b/,
+  /\bcustomer ceiling\b/,
+  /\bhow many (?:more )?(?:customers|buyers|(?:web )?meetings|leads) do (?:we|i) need\b/,
+  /\bcan we sell (?:all )?(?:of )?(?:the |our )?leads\b/,
+  /\bare (?:the |our )?buyers full\b/,
+  /\bcredits? (?:are |is )?owed\b/,
+  /\bsales per lead\b/,
+  /\b(?:lead|buyer|customer|meeting)s? capacity\b/,
+  /\bcapacity (?:for|of|to take|to sell|to handle) (?:more )?(?:the |our )?(?:leads|buyers|customers|meetings)\b/,
+];
+
+// A bottleneck in the ads studio is Janet's ("what's the bottleneck on the
+// creative side?"), so creative words keep the marketing route.
+const CREATIVE_WORK = /\b(?:creatives?|creative side|briefs?|angles?|scripts?|voice ?overs?|hooks?|studio)\b/;
+
+/** True for a lead-database capacity question. */
+export function isCapacityQuestion(message: string): boolean {
+  const n = normalise(message);
+  if (!n || CREATIVE_WORK.test(n)) return false;
+  return CAPACITY_PATTERNS.some(r => r.test(n));
+}
+
+/** A capacity question goes to JARVIS unless Zac addressed Janet, either
+ *  by switching to her this utterance (`addressed`) or by name in it. */
+export function capacityGoesToJarvis(message: string, addressed: Director | null): boolean {
+  if (addressed === 'janet' || detectAddressedDirector(message) === 'janet') return false;
+  return isCapacityQuestion(message);
+}
+
+// "show me the department, what's the bottleneck?" — a capacity answer opens
+// the department view only when Zac asks to see it.
+const DEPARTMENT_VIEW_ASK =
+  /\b(?:open|show(?: me)?|pull up|bring up|take me to|go to|let'?s see)\b.*\b(?:department|marketing)\b/;
+
+export function asksToSeeDepartment(message: string): boolean {
+  return DEPARTMENT_VIEW_ASK.test(normalise(message));
 }

@@ -9,6 +9,7 @@ export type Expected =
   | { kind: 'sales' }
   | { kind: 'marketing' }
   | { kind: 'retention' }
+  | { kind: 'capacity' } // lead-database capacity question → JARVIS, no view change
   | { kind: 'pane'; view: string }
   | { kind: 'presence' }
   | { kind: 'persona'; persona: 'jarvis' | 'janet'; remainder?: string }
@@ -40,6 +41,21 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: 'how many new leads have come into the lead database', expect: { kind: 'retention' } },
   { text: 'how is the lead database doing', expect: { kind: 'retention' } },
   { text: 'retention', expect: { kind: 'retention' } },
+  { text: "what's the bottleneck?", expect: { kind: 'capacity' } },
+  { text: "Jarvis, what's the bottleneck right now?", expect: { kind: 'capacity' } },
+  { text: "what's our customer ceiling", expect: { kind: 'capacity' } },
+  { text: 'how many customers do we need?', expect: { kind: 'capacity' } },
+  { text: 'how many buyers do we need this month', expect: { kind: 'capacity' } },
+  { text: 'how many web meetings do we need?', expect: { kind: 'capacity' } },
+  { text: 'how many meetings do we need', expect: { kind: 'capacity' } },
+  { text: 'how many leads do we need', expect: { kind: 'capacity' } },
+  { text: 'can we sell all the leads?', expect: { kind: 'capacity' } },
+  { text: 'are buyers full?', expect: { kind: 'capacity' } },
+  { text: 'how many credits are owed', expect: { kind: 'capacity' } },
+  { text: "what's the sales per lead", expect: { kind: 'capacity' } },
+  { text: 'do we have the buyer capacity for more leads', expect: { kind: 'capacity' } },
+  { text: 'is there capacity for more buyers', expect: { kind: 'capacity' } },
+  { text: "what's the bottleneck on the creative side?", expect: { kind: 'marketing' }, note: 'a creative bottleneck is Janet\'s' },
   { text: 'open tasks', expect: { kind: 'pane', view: 'tasks' } },
   { text: 'show the command centre', expect: { kind: 'pane', view: 'command' } },
   { text: 'are you there?', expect: { kind: 'presence' } },
@@ -49,6 +65,7 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: 'let me talk to Janet please', expect: { kind: 'persona', persona: 'janet' } },
   { text: 'Janet, what angle should we run next?', expect: { kind: 'persona', persona: 'janet', remainder: 'what angle should we run next?' } },
   { text: 'Janet what do you think of the hook', expect: { kind: 'persona', persona: 'janet', remainder: 'what do you think of the hook' } },
+  { text: "Janet, what's the bottleneck on the creative side?", expect: { kind: 'persona', persona: 'janet', remainder: "what's the bottleneck on the creative side?" }, note: 'stays with Janet' },
 
   // ── Must reach Claude untouched ──────────────────────────────────────────
   { text: 'I had a conversation with a landlord about the pipeline', expect: { kind: 'claude' } },
@@ -69,5 +86,6 @@ export const UTTERANCES: Array<{ text: string; expect: Expected; note?: string }
   { text: 'can you share the doc with me', expect: { kind: 'claude' } },
   { text: 'the landlord asked about retention of the deposit', expect: { kind: 'claude' } },
   { text: 'we lost a subscriber to churn last month', expect: { kind: 'claude' } },
+  { text: 'I had a meeting with a landlord about capacity at his flat', expect: { kind: 'claude' }, note: 'capacity, but not of leads/buyers/meetings' },
   { text: 'what should I do about my schedule this week', expect: { kind: 'claude' } },
 ];

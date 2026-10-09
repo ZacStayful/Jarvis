@@ -20,7 +20,13 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
-import { detectAddressedDirector, detectMarketingCommand, type ViewRoute } from "@/lib/commandRouter";
+import {
+  asksToSeeDepartment,
+  capacityGoesToJarvis,
+  detectAddressedDirector,
+  detectMarketingCommand,
+  type ViewRoute,
+} from "@/lib/commandRouter";
 import { useJARVIS } from "@/hooks/useJARVIS";
 import { useCrossSessionContext } from "@/hooks/useCrossSessionContext";
 import type { InputMode, JARVISState, Message, PersonaId } from "@/types/jarvis";
@@ -704,6 +710,29 @@ export default function JarvisPage() {
     return { persona: who, justOpened };
   };
 
+  // Lead-database capacity — "what's the bottleneck?", "how many buyers do we
+  // need?", "are buyers full?". Answered from the snapshot's capacity block,
+  // which the server attaches for JARVIS on any capacity question. It's his
+  // (the budget and scaling decision rest on it), so it goes to him unless
+  // Zac addressed Janet; if she was talking, he introduces himself first.
+  // Nothing opens unless Zac asks to see the department. Runs before the
+  // marketing handler, which would otherwise route "cost per lead
+  // bottleneck" to Janet and open the view.
+  const handleCapacityQuestion = (
+    text: string,
+    addressed: PersonaId | null
+  ): { justOpened: boolean } | null => {
+    if (!capacityGoesToJarvis(text, addressed)) return null;
+    let justOpened = false;
+    if (asksToSeeDepartment(text) && routedView !== "marketing-department") {
+      clearAllViews();
+      setRoutedView("marketing-department");
+      justOpened = true;
+    }
+    ackAs("jarvis", justOpened ? "Opening the marketing department, sir." : null);
+    return { justOpened };
+  };
+
   // Lead-database retention — "show me customer retention", "open the lead
   // database", "what's our churn rate". JARVIS's dashboard: it opens, acks
   // through ackAs (so JARVIS introduces himself first if Janet was talking),
@@ -819,6 +848,14 @@ export default function JarvisPage() {
     return undefined;
   };
 
+  // LIVE VIEW DATA for the view on screen, when it has any.
+  const viewContextFor = (view: string | undefined): string | undefined =>
+    view === "sales-dashboard"
+      ? buildSalesContextLine(salesMetrics)
+      : view === "retention-dashboard"
+        ? buildRetentionContextLine(retentionData)
+        : undefined;
+
   // Shared nav-intent handler used by both voice and text paths. Detect
   // every possible intent, clear competing views once, then set the winner.
   // Priority: sales > portfolio > lucy > investment dashboard > legacy pane.
@@ -923,6 +960,8 @@ export default function JarvisPage() {
   //     ↓
   //   presence check ("are you there?")           → instant local line
   //     ↓
+  //   capacity question ("what's the bottleneck?") → JARVIS, no view change
+  //     ↓
   //   marketing request ("how are the ads doing?") → department view + Janet/JARVIS
   //     ↓
   //   retention request ("show me customer retention") → lead-database view, JARVIS
@@ -964,6 +1003,19 @@ export default function JarvisPage() {
       return;
     }
 
+    const capacity = handleCapacityQuestion(message, sw?.persona ?? null);
+    if (capacity) {
+      const view = capacity.justOpened ? "marketing-department" : currentViewId();
+      sendMessage(message, false, {
+        inputMode,
+        persona: "jarvis",
+        activeView: view,
+        viewJustOpened: capacity.justOpened,
+        viewContext: viewContextFor(view),
+      });
+      return;
+    }
+
     const marketing = handleMarketingRequest(message, persona);
     if (marketing) {
       sendMessage(message, false, {
@@ -986,12 +1038,7 @@ export default function JarvisPage() {
     if (nav.openedView) persona = "jarvis";
 
     const viewNow = nav.openedView ?? currentViewId();
-    const viewContext =
-      viewNow === "sales-dashboard"
-        ? buildSalesContextLine(salesMetrics)
-        : viewNow === "retention-dashboard"
-          ? buildRetentionContextLine(retentionData)
-          : undefined;
+    const viewContext = viewContextFor(viewNow);
 
     // "Janet, what do you make of this hook?" — nothing local spoke, so the
     // introduction plays now and the reply queues behind it.

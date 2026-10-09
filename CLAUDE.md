@@ -101,6 +101,13 @@ person is a data change.
   `META_AD_ACCOUNT_ID` exist. `flagWeakening` is the pure rule (CTR down
   ≥20% or cost per lead up ≥25%, with rising frequency or both). Without a
   token Janet answers from the snapshot's verdicts.
+- **Capacity** (lead-database buyers the landlord leads support, and the
+  bottleneck): the snapshot's `capacity` block is the only source — never
+  Supabase, Monday or Meta from here. `isCapacityQuestion` runs in the
+  chain ahead of marketing/retention and goes to JARVIS unless Janet was
+  addressed (`capacityGoesToJarvis`). It changes no view unless Zac asks to
+  see the department. The server attaches the MARKETING CONTEXT for it in
+  any view, and the CAPACITY rules sit in `marketingDepartmentRules`.
 
 ---
 

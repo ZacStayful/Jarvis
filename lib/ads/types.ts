@@ -5,7 +5,7 @@
 //
 // Every field is optional/nullable on purpose: the Friday ad check writes the
 // snapshot, fields start as null until there's data, and older snapshots may
-// predate a block (e.g. `creative`). Render "—" for anything missing; never
+// predate a block (e.g. `creative`, `capacity`). Render "—" for anything missing; never
 // fill in a number.
 
 export type Director = 'jarvis' | 'janet';
@@ -74,6 +74,96 @@ export interface SnapshotCreative {
   waiting_on_zac?: string[] | null;
 }
 
+// Lead-database capacity (added 9 Oct 2026; rules in stayful-ads
+// scaling/CAPACITY_MODEL.md). The landlord leads set the buyer ceiling, the
+// ceiling sets how many buyers to aim for, and that sets the buyer enquiries
+// and web meetings needed. Read-only here, like every other block.
+
+export type CapacityStageId =
+  | 'area_match'
+  | 'buyer_capacity'
+  | 'landlord_supply'
+  | 'meeting_capacity'
+  | 'buyer_enquiries'
+  | 'booking_rate'
+  | 'attendance'
+  | 'close_rate'
+  | 'churn';
+
+export type CapacityStageStatus = 'ok' | 'watch' | 'bottleneck';
+
+export interface SnapshotCapacitySupply {
+  leads_month?: number | null;
+  leads_facebook_month?: number | null;
+  leads_other_month?: number | null;
+  leads_next_month?: number | null;
+  sales_per_lead?: number | null;
+  unsold_pct?: number | null;
+  unsold_area_gap_pct?: number | null;
+  unsold_buyers_full_pct?: number | null;
+}
+
+export interface SnapshotCapacityDemand {
+  customers_total?: number | null;
+  customers_unpaused?: number | null;
+  customers_paused?: number | null;
+  avg_allocation?: number | null;
+  committed_leads_month?: number | null;
+  credits_owed?: number | null;
+  credits_owed_change?: number | null;
+  churn_monthly_pct?: number | null;
+  churn_30d_count?: number | null;
+  new_30d_count?: number | null;
+}
+
+export interface SnapshotCapacityCeiling {
+  supply_cover?: number | null;
+  ceiling_now?: number | null;
+  ceiling_next?: number | null;
+  ceiling_total_next?: number | null;
+  customer_gap?: number | null;
+}
+
+export interface SnapshotCapacityPipeline {
+  booking_rate_pct?: number | null;
+  attendance_rate_pct?: number | null;
+  close_rate_pct?: number | null;
+  new_customers_needed?: number | null;
+  meetings_needed?: number | null;
+  meeting_capacity_month?: number | null;
+  bookings_needed?: number | null;
+  buyer_enquiries_needed?: number | null;
+  buyer_enquiries_actual?: number | null;
+  meetings_actual?: number | null;
+  /** Rates measured on too few cases to trust, e.g. "booking_rate_pct". */
+  low_sample?: string[] | null;
+}
+
+export interface SnapshotCapacityStage {
+  stage?: CapacityStageId | null;
+  status?: CapacityStageStatus | null;
+  value?: number | string | null;
+  reason?: string | null;
+}
+
+export interface SnapshotCapacityBottleneck {
+  stage?: CapacityStageId | null;
+  headline?: string | null;
+  action?: string | null;
+}
+
+export interface SnapshotCapacity {
+  window_days?: number | null;
+  supply?: SnapshotCapacitySupply | null;
+  demand?: SnapshotCapacityDemand | null;
+  ceiling?: SnapshotCapacityCeiling | null;
+  pipeline?: SnapshotCapacityPipeline | null;
+  /** The nine stages, in order. */
+  stages?: SnapshotCapacityStage[] | null;
+  bottleneck?: SnapshotCapacityBottleneck | null;
+  notes?: string[] | null;
+}
+
 export interface WeeklySnapshot {
   schema_version?: number | null;
   generated_at?: string | null;
@@ -96,6 +186,7 @@ export interface WeeklySnapshot {
   build_next?: string | null;
   open_setup_actions?: string[] | null;
   creative?: SnapshotCreative | null;
+  capacity?: SnapshotCapacity | null;
   notes?: string[] | null;
 }
 
