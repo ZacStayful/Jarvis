@@ -14,6 +14,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Message, TextMessage, ApprovalMessage } from '@/types/jarvis';
 import { ApprovalCard } from './ApprovalCard';
+import { DIRECTORS, hasSpeakerTags, splitBySpeaker } from '@/lib/ads/speakers';
 
 // ─── Markdown-lite renderer ───────────────────────────────────────────────────
 // A lightweight renderer for JARVIS responses — handles bold, code, lists.
@@ -192,6 +193,29 @@ function renderInline(text: string): React.ReactNode {
   );
 }
 
+// ─── Marketing department speakers ────────────────────────────────────────────
+// Department replies tag each director's part with [JARVIS] / [JANET]. Label
+// each part with the director's name; an untagged reply (one Jarvis part)
+// renders exactly as before.
+
+function renderSpeakerContent(text: string): React.ReactNode {
+  const parts = splitBySpeaker(text);
+  if (parts.length <= 1 && parts[0]?.speaker !== 'janet' && parts[0]?.text === text.trim()) {
+    return renderContent(text);
+  }
+  return parts.map((part, i) => (
+    <div key={i} className={i > 0 ? 'mt-3' : undefined}>
+      <div
+        className="text-xs font-mono mb-1 tracking-wider"
+        style={{ color: DIRECTORS[part.speaker].colour }}
+      >
+        {DIRECTORS[part.speaker].label}
+      </div>
+      {renderContent(part.text)}
+    </div>
+  ));
+}
+
 // ─── Streaming cursor ─────────────────────────────────────────────────────────
 
 function StreamingCursor() {
@@ -229,8 +253,8 @@ function JARVISBubble({
       </div>
 
       <div className="flex-1 min-w-0">
-        {/* Model label */}
-        {message.model && !message.isStreaming && (
+        {/* Model label — department replies label each director instead */}
+        {message.model && !message.isStreaming && !hasSpeakerTags(message.content) && (
           <div className="text-xs text-zinc-600 font-mono mb-1.5 tracking-wider">
             JARVIS {message.model.includes('opus') ? '· DEEP' : ''}
           </div>
@@ -238,7 +262,7 @@ function JARVISBubble({
 
         {/* Content */}
         <div className="prose prose-invert prose-sm max-w-none">
-          {renderContent(message.content)}
+          {renderSpeakerContent(message.content)}
           {message.isStreaming && <StreamingCursor />}
         </div>
       </div>

@@ -46,6 +46,9 @@ export type { ViewRoute };
 type UseJARVISOptions = BaseUseJARVISOptions & {
   onRoute?: (view: ViewRoute, params?: Record<string, unknown>) => void;
   crossSessionContext?: string;
+  // The routed view on screen; /api/chat keeps the marketing department's
+  // context for follow-ups while 'marketing-department' is open.
+  activeView?: string | null;
   voiceEnabled?: boolean;
   persistSession?: boolean;
 };
@@ -147,6 +150,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     onError,
     onRoute,
     crossSessionContext = '',
+    activeView,
     voiceEnabled = true,
     persistSession = true,
   } = options;
@@ -289,6 +293,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
             deep,
             maxTokens: deep ? 4096 : 2048,
             crossSessionContext: crossSessionContext || undefined,
+            activeView: activeView || undefined,
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -449,6 +454,7 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
       onError,
       onRoute,
       crossSessionContext,
+      activeView,
       voiceEnabled,
       speak,
       isSpeaking,

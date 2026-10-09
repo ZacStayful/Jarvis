@@ -25,6 +25,7 @@ import type { JARVISState, Message } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useTTS } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
+import { hasSpeakerTags, janetVoiceId, splitBySpeaker } from "@/lib/ads/speakers";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
@@ -87,7 +88,7 @@ export default function JarvisPage() {
   // Phase 8's client-side ElevenLabs streaming is intentionally disabled
   // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
   // ElevenLabs env vars are added in Vercel.
-  const { speak, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
+  const { speak, speakSequence, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
 
   // Phase 8 — load cross-session context block to inject into the system prompt
   const crossSession = useCrossSessionContext();
@@ -107,6 +108,7 @@ export default function JarvisPage() {
       if (params) setViewParams(params);
     },
     crossSessionContext: crossSessionBlock,
+    activeView: routedView,
     // Disable Phase 8 client-streaming voice — we use the server proxy below
     voiceEnabled: false,
     persistSession: true,
@@ -258,9 +260,20 @@ export default function JarvisPage() {
         skipNextAssistantSpeechRef.current = false;
         return;
       }
-      speak(latest.content);
+      if (!hasSpeakerTags(latest.content)) {
+        speak(latest.content);
+        return;
+      }
+      // Marketing department reply: speak each director's part in their own
+      // voice — Janet's ElevenLabs voice if set, otherwise Jarvis's.
+      speakSequence(
+        splitBySpeaker(latest.content).map((part) => ({
+          text: part.text,
+          voiceId: part.speaker === "janet" ? janetVoiceId() : undefined,
+        }))
+      );
     }
-  }, [messages, muted, speak]);
+  }, [messages, muted, speak, speakSequence]);
 
   // Auto-greet on first mount (after login). Uses sessionStorage so a hard
   // refresh inside the same tab doesn't keep replaying the welcome.

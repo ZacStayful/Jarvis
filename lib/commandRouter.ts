@@ -4,6 +4,8 @@
 // Called by /api/chat before Claude to inject route events into the SSE stream.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { Director } from '@/lib/ads/types';
+
 export type ViewRoute =
   | 'marketing-department'
   | 'news-briefing'
@@ -144,6 +146,22 @@ const CONVERSATION_LOG_PATTERNS = [
 export function detectMarketingCommand(message: string): boolean {
   const trimmed = message.trim();
   return MARKETING_PATTERNS.some(r => r.test(trimmed));
+}
+
+// Creative words that mean Janet's files are needed even when Zac opens with
+// "Jarvis, …" (it's also the app's wake word).
+const CREATIVE_TOPIC =
+  /\b(creatives?|briefs?|angles?|scripts?|voice ?overs?|hooks?|making|building|studio|carousel|video|photo)\b/i;
+
+/** Which marketing director Zac addressed, for scoping the context files.
+ *  'both' when neither (or both) is named, or Jarvis is named but the
+ *  question is about creative. */
+export function detectAddressedDirector(message: string): Director | 'both' {
+  const janet = /\bjanet\b/i.test(message);
+  const jarvis = /\bjarvis\b/i.test(message);
+  if (janet && !jarvis) return 'janet';
+  if (jarvis && !janet && !CREATIVE_TOPIC.test(message)) return 'jarvis';
+  return 'both';
 }
 
 export function detectCommand(message: string): CommandResult {

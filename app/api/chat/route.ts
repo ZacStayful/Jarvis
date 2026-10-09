@@ -18,7 +18,8 @@
 import { NextRequest } from 'next/server';
 import { buildMcpServers } from '@/lib/mcp-servers';
 import { buildSystemPrompt } from '@/lib/jarvis-system-prompt';
-import { detectCommand } from '@/lib/commandRouter';
+import { detectAddressedDirector, detectCommand } from '@/lib/commandRouter';
+import { buildMarketingContext } from '@/lib/ads/department';
 import { detectLucyCommand, LUCY_SYSTEM_CONTEXT } from '@/lib/lucy-commands';
 import {
   detectPortfolioCommand,
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
   let deep: boolean;
   let maxTokens: number;
   let crossSessionContext: string | undefined;
+  let activeView: string | undefined;
 
   try {
     const body = await req.json();
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
       typeof body.crossSessionContext === 'string' && body.crossSessionContext.trim()
         ? body.crossSessionContext
         : undefined;
+    activeView = typeof body.activeView === 'string' ? body.activeView : undefined;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,
@@ -102,14 +105,31 @@ export async function POST(req: NextRequest) {
     ? detectPortfolioCommand(lastUserMessage.content)
     : null;
 
+  // ── Marketing department: Jarvis + Janet, read-only stayful-ads data.
+  //    Injected when this message is a marketing question, or when the
+  //    marketing view is already open and nothing else was asked for — so
+  //    follow-ups ("what did you change last week?") keep the data.
+  const marketingViewOpen = activeView === 'marketing-department';
+  const marketingIntent = commandResult.view === 'marketing-department';
+  const marketingFollowUp =
+    marketingViewOpen && !commandResult.view && !lucyCommand && !portfolioCommand;
+  const marketingContext =
+    lastUserMessage && (marketingIntent || marketingFollowUp)
+      ? await buildMarketingContext(detectAddressedDirector(lastUserMessage.content))
+      : null;
+
   // ── ACTIVE VIEW directive: any time a command opens a view, tell Claude
   //    explicitly what view is being shown and how to respond. Replaces the
   //    old canned ROUTE_RESPONSES short-circuit so Claude actually thinks
   //    about what to say instead of repeating a stock phrase.
+  // A marketing question asked while the marketing view is already open is a
+  // follow-up, not a view change — no "acknowledge the view" directive.
   const activeViewName =
-    commandResult.view ??
-    (portfolioCommand ? 'portfolio-dashboard' : null) ??
-    (lucyCommand ? 'lucy-intelligence-centre' : null);
+    marketingIntent && marketingViewOpen
+      ? null
+      : commandResult.view ??
+        (portfolioCommand ? 'portfolio-dashboard' : null) ??
+        (lucyCommand ? 'lucy-intelligence-centre' : null);
 
   const activeViewDirective = activeViewName
     ? `=== ACTIVE VIEW DIRECTIVE ===
@@ -139,6 +159,7 @@ Voice cadence: short sentences. This response will be spoken aloud.
     buildSystemPrompt(missingIntegrations),
     lucyCommand ? LUCY_SYSTEM_CONTEXT : null,
     portfolioCommand ? PORTFOLIO_SYSTEM_CONTEXT : null,
+    marketingContext,
     activeViewDirective,
     crossSessionContext ?? null,
   ]
