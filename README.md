@@ -124,7 +124,7 @@ Set in Vercel dashboard → Project → Settings → Environment Variables:
 ANTHROPIC_API_KEY=
 JARVIS_PASSWORD=
 SESSION_SECRET=
-ASSEMBLYAI_API_KEY=4610edab175d4b29a43ac9d60dee2cd9
+ASSEMBLYAI_API_KEY=
 ELEVENLABS_API_KEY=        (Phase 2)
 ELEVENLABS_VOICE_ID=       (Phase 2)
 ```

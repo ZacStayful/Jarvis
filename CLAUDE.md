@@ -217,6 +217,18 @@ silence. See the "WHEN YOU CAN'T TELL WHAT ZAC IS ASKING" section in
 
 ---
 
+## API route security (middleware.ts)
+
+- Routes without the login cookie fall into two lists in `middleware.ts`:
+  `SERVICE_ROUTES` (Retell, n8n, Twilio, Resend, AssemblyAI, Calendly —
+  locked by `JARVIS_API_SECRET` via `x-jarvis-secret` / Bearer / `?key=`,
+  open until that env var is set) and `PUBLIC_LEAD_ROUTES` (leads'
+  browsers — open, so each route validates input with
+  `lib/public-lead-input.ts`). A new webhook route goes in one of the two
+  lists; never add a bare bypass.
+
+---
+
 ## Marketing department (Jarvis + Janet)
 
 - Read-only view of the private `ZacStayful/stayful-ads` repo:

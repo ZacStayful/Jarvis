@@ -58,6 +58,28 @@ Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h
 | Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🔴 — not set in Vercel; the view and the directors say the data is unavailable until it is |
 | Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's) | 🔴 — missing, so Janet speaks in Jarvis's voice. Inlined at build: redeploy after setting it |
 
+## API route security
+
+Routes called by outside services can't use the login cookie, so `middleware.ts` locks them with a shared secret instead. The lock is **off until `JARVIS_API_SECRET` is set**, so update the callers first, then set the variable.
+
+| Feature | What it needs (Vercel env) | Status |
+| --- | --- | --- |
+| Lock on `/api/whatsapp`, `/api/calendly`, `/api/retell`, `/api/monday`, `/api/email`, `/api/lucy/voice` | `JARVIS_API_SECRET` (`openssl rand -hex 32`) | 🔴 — not set; these routes are open to anyone with the URL (they can email leads, text them, start Lucy calls and edit Monday) |
+
+Callers send the secret as an `x-jarvis-secret` header, `Authorization: Bearer <secret>`, or `?key=<secret>` on the URL. Update every caller **before** setting the variable:
+
+1. **Retell (Lucy) custom functions**: `monday/lead`, `monday/update-lead`, `monday/get-updates`, `monday/update-status`, `retell/send-link`, `calendly/availability`, `calendly/book`. Add `?key=…` to each function URL, or the header if Retell lets you set one.
+2. **Retell agent webhooks**: the call webhook (`/api/retell/webhook`) and the inbound dynamic-variables webhook (`/api/lucy/voice/context`). Add `?key=…`.
+3. **n8n HTTP nodes**: `whatsapp/send-initial`, `whatsapp/send-followup`, `retell/call`, `email/send`, `email/zac-send`, plus anything else n8n posts to these prefixes. Add the `x-jarvis-secret` header.
+4. **Twilio** messaging webhook (`/api/whatsapp/reply`): add `?key=…` to the URL in the Twilio console.
+5. **Resend** webhook (`/api/email/tracking`): add `?key=…`.
+6. **AssemblyAI** transcription callbacks (`/api/retell/transcribe?itemId=…`): whatever submits the job adds `&key=…` to `webhook_url`.
+7. **Calendly** webhook (`/api/calendly/webhook`): recreate the subscription with `?key=…` in the URL (and ideally a signing key in `CALENDLY_WEBHOOK_SIGNING_KEY`).
+
+Then set `JARVIS_API_SECRET` in Vercel (Production and Preview) and redeploy. Anything still missing the secret gets a 401. The JARVIS test page (`/test/whatsapp`) keeps working through your login.
+
+Lead-facing routes (`/api/qualifier`, `/api/presentation`, `/api/tracking`) stay public, because leads' browsers call them. They only accept a numeric Monday item ID, known fields and short values.
+
 ## MCP integrations (Claude tool-use)
 
 These are bearer-token MCP servers wired up in `lib/mcp-servers.ts`. Each
