@@ -32,6 +32,9 @@ export interface TextMessage extends BaseMessage {
   content: string;
   // Technical detail behind a friendly error line (rendered small, never spoken).
   errorDetail?: string;
+  // A local (UI-only) message that should still be spoken when it appears,
+  // e.g. the confirmation after an approval card is actioned.
+  announce?: boolean;
 }
 
 export interface ApprovalMessage extends BaseMessage {
@@ -54,7 +57,11 @@ export type ActionType =
   | 'trigger_workflow'
   | 'trigger_lucy'
   | 'write_obsidian'
-  | 'write_drive';
+  | 'write_drive'
+  // Marketing department (Janet): queue a creative brief in stayful-ads, and
+  // ask the ads studio to build it. Executed by /api/janet/brief, not Claude.
+  | 'create_ad_brief'
+  | 'build_ad';
 
 export interface ActionRequest {
   id: string;
@@ -74,7 +81,9 @@ export type ActionDetails =
   | TriggerWorkflowDetails
   | TriggerLucyDetails
   | WriteObsidianDetails
-  | WriteDriveDetails;
+  | WriteDriveDetails
+  | CreateAdBriefDetails
+  | BuildAdDetails;
 
 export interface BookMeetingDetails {
   leadName: string;
@@ -136,6 +145,29 @@ export interface WriteDriveDetails {
   fileName: string;
   folder: string;
   contentSummary: string;
+}
+
+/** A creative brief for one ad, matching stayful-ads briefs/queue.csv. */
+export interface CreateAdBriefDetails {
+  angleId: string;          // angle ID from ANGLES.md
+  why: string;              // the trigger / evidence this angle answers
+  format: 'video' | 'photo' | 'carousel';
+  lookGroup?: string;       // visual look group, if the playbook names one
+  hook: string;             // opening line, about the property, never the viewer's finances
+  example: string;          // "Example: a 2-bed. Every property is different." — never a town
+  voice?: string;           // voice_name from register/voices.csv, if known
+  neededBy?: string;        // YYYY-MM-DD
+  primaryText?: string;     // Ads Manager copy
+  headline?: string;
+  description?: string;
+  cta?: string;             // defaults to "Get quote"
+  notes?: string;
+}
+
+/** Ask the ads studio to build a queued brief. */
+export interface BuildAdDetails {
+  briefId: string;          // e.g. B007
+  note?: string;
 }
 
 // ─── Hook Return Types ────────────────────────────────────────────────────────

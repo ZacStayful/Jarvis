@@ -619,6 +619,46 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
             : m
         )
       );
+      // Janet's stayful-ads actions are executed by the app, not by Claude
+      // (there is no tool for them); the confirmation is a local line in
+      // her voice.
+      const type = msg.actionRequest.type;
+      if (type === 'create_ad_brief' || type === 'build_ad') {
+        const speaker: PersonaId = msg.speaker ?? 'janet';
+        let outcome: { ok: boolean; message: string; warnings?: string[] };
+        try {
+          const res = await fetch('/api/janet/brief', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, details: msg.actionRequest.details }),
+          });
+          outcome = (await res.json()) as typeof outcome;
+          if (!outcome || typeof outcome.message !== 'string') {
+            outcome = { ok: false, message: `That didn't go through, Zac (HTTP ${res.status}).` };
+          }
+        } catch (err) {
+          outcome = {
+            ok: false,
+            message: `That didn't go through, Zac. ${err instanceof Error ? err.message : 'Network error'}`,
+          };
+        }
+        const notice: TextMessage = {
+          id: generateId(),
+          role: 'assistant',
+          type: 'text',
+          content: outcome.message,
+          timestamp: new Date(),
+          isStreaming: false,
+          local: true,
+          announce: true,
+          speaker,
+          errorDetail: outcome.warnings?.length ? outcome.warnings.join(' · ') : undefined,
+        };
+        setMessages(prev => [...prev, notice]);
+        debouncedSaverRef.current.save();
+        return;
+      }
+
       const approvalContent = `JARVIS_APPROVAL: ${JSON.stringify(msg.actionRequest)}`;
       await sendToAPI(approvalContent, false, messagesRef.current, {
         inputMode: 'text',

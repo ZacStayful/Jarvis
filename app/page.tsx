@@ -332,9 +332,10 @@ export default function JarvisPage() {
 
       if (m.local) {
         // Greeting / handover lines were spoken by whoever added them.
-        // Error notices arrive here and are spoken now, as an interrupt.
+        // Error notices and announced notices (approval outcomes) arrive
+        // here and are spoken now, as an interrupt.
         spokenIdsRef.current.add(m.id);
-        if (m.type === "text" && m.errorDetail) speak(m.content, speaker);
+        if (m.type === "text" && (m.errorDetail || m.announce)) speak(m.content, speaker);
         continue;
       }
 

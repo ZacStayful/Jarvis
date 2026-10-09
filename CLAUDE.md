@@ -82,6 +82,19 @@ person is a data change.
   `[JARVIS]`/`[JANET]` tags. If a reply still carries tags, `lib/ads/speakers.ts`
   labels the parts in the bubbles and `stripMarkdownForSpeech` drops them
   from speech.
+- **Janet's two write actions** (the only writes to stayful-ads, both
+  behind an approval card): `create_ad_brief` → `lib/janet/ads-writer.ts`
+  appends to `briefs/queue.csv` (status `approved`), writes
+  `briefs/B###.md`, adds a dated `DECISIONS.md` line; `build_ad` →
+  `workflow_dispatch` on the repo's build workflow. `useJARVIS.approveAction`
+  routes these to `/api/janet/brief` (Claude has no tool for them) and adds
+  a local, announced confirmation in Janet's voice. Needs
+  `STAYFUL_ADS_GITHUB_WRITE_TOKEN`; the brief id is assigned at save time.
+- **Live Meta performance** (`lib/janet/meta.ts`, read-only insights) is
+  attached to the marketing context only when `META_ACCESS_TOKEN` +
+  `META_AD_ACCOUNT_ID` exist. `flagWeakening` is the pure rule (CTR down
+  ≥20% or cost per lead up ≥25%, with rising frequency or both). Without a
+  token Janet answers from the snapshot's verdicts.
 
 ---
 

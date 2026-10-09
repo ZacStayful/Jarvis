@@ -61,6 +61,16 @@ const ACTION_META: Record<
     icon: '📁',
     colour: 'text-teal-400 border-teal-400/40 bg-teal-400/10',
   },
+  create_ad_brief: {
+    label: 'QUEUE AD BRIEF',
+    icon: '🎬',
+    colour: 'text-pink-300 border-pink-300/40 bg-pink-300/10',
+  },
+  build_ad: {
+    label: 'BUILD AD',
+    icon: '🛠️',
+    colour: 'text-pink-300 border-pink-300/40 bg-pink-300/10',
+  },
 };
 
 // ─── Detail rendering ─────────────────────────────────────────────────────────
