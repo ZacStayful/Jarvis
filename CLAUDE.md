@@ -45,6 +45,8 @@ stopSpeaking()
   ↓
 handlePresenceCheck(text)    // "are you there?" → instant local ack
   ↓
+handleMarketingRequest(text) // ads / Janet / "department briefing" → view + Claude
+  ↓
 handleNewsRequest(text)      // news intent / category routing / summarise
   ↓
 handleNewsConversation(text) // stop/no-more during open briefing
@@ -212,6 +214,24 @@ intent is unclear, Claude must briefly list 4–6 most-likely
 capabilities and ask which fits — never "I don't understand", never
 silence. See the "WHEN YOU CAN'T TELL WHAT ZAC IS ASKING" section in
 `lib/jarvis-system-prompt.ts`.
+
+---
+
+## Marketing department (Jarvis + Janet)
+
+- Read-only view of the private `ZacStayful/stayful-ads` repo:
+  `lib/ads/department.ts` (server only, `STAYFUL_ADS_GITHUB_TOKEN`, 1h
+  cache). Never commit ad data here; never call Meta; never write to
+  stayful-ads.
+- `detectMarketingCommand` runs before news/leads on client and server
+  ("department briefing" would otherwise open the news).
+- `/api/chat` injects the MARKETING CONTEXT block for marketing questions
+  *and* for any follow-up while `activeView === 'marketing-department'`
+  (sent by `useJARVIS`), so "what did you change last week?" keeps the data.
+- Replies tag each director with `[JARVIS]` / `[JANET]` on its own line.
+  Tags stay in history (the model keeps the format); `splitBySpeaker` in
+  `lib/ads/speakers.ts` labels them in the chat and `useTTS.speakSequence`
+  voices them (Janet: `NEXT_PUBLIC_JANET_VOICE_ID`). Untagged = Jarvis.
 
 ---
 

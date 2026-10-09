@@ -112,6 +112,7 @@ jarvis → cname.vercel-dns.com
 | 6 — Learning | ⬜ | Transcript logging, Obsidian sync, end-of-day summaries |
 | 7 — Lucy Loop | ⬜ | Lucy triggering, post-call data ingestion |
 | 8 — Polish | ⬜ | Session memory, cross-session context, performance |
+| 9 — Marketing department | 🟡 Preview | Talk to Jarvis (marketing director) and Janet (creative director) by voice or text; read-only view of the `stayful-ads` weekly snapshot and brief pipeline |
 
 ---
 

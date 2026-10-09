@@ -49,6 +49,15 @@ but persistence simply won't happen until both env vars are set.
 | --- | --- | --- |
 | Monday API access | `MONDAY_API_KEY`, optional `MONDAY_BOARD_ID` (defaults to `5891626711`) | 🟡 — env var likely set; no `/api/lucy/*` calls observed in latest log window (nav collision now fixed in this commit, so try again) |
 
+## Marketing department (Jarvis + Janet)
+
+Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h). Opened by marketing questions ("how are the ads doing?", "Janet, …", "department briefing").
+
+| Feature | What it needs (Vercel env) | Status |
+| --- | --- | --- |
+| Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🔴 — not set in Vercel; the view and the directors say the data is unavailable until it is |
+| Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's) | 🔴 — missing, so Janet speaks in Jarvis's voice. Inlined at build: redeploy after setting it |
+
 ## MCP integrations (Claude tool-use)
 
 These are bearer-token MCP servers wired up in `lib/mcp-servers.ts`. Each
