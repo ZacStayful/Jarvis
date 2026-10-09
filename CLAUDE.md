@@ -133,12 +133,48 @@ body tells it `activeView` / `viewJustOpened` / `viewContext` and the
 prompt gets an ACTIVE VIEW block (and LIVE VIEW DATA, e.g. the sales
 metrics line from `lib/sales/context.ts`). Two view systems remain:
 
-- `routedView` (`ViewRoute`: `news-briefing` | `investment-dashboard`) and
-  the boolean `salesOpen` / `lucyOpen` / `portfolioOpen` — the real views.
+- `routedView` (`ViewRoute`: `news-briefing` | `investment-dashboard` |
+  `marketing-department` | `retention-dashboard`) and the boolean
+  `salesOpen` / `lucyOpen` / `portfolioOpen` — the real views.
 - `activeView` (`ViewId`) — the legacy mock panes (`command`, `tasks`,
   `intelligence`, `log`), reachable by explicit command or nav dots.
 
 `clearAllViews()` before setting any of them.
+
+---
+
+## Lead database retention (JARVIS's dashboard)
+
+The lead-database SaaS (operators buying landlord leads at £15) has its own
+funnel and churn, in two places that neither alone covers:
+
+- **Monday board `18420649520`** ("Stayful Lead database enquiries") is the
+  funnel. Every enquiry lands there; the lead-database app writes the six
+  subscription labels and `Customer start/end date`; sales labels are set by
+  hand. Board and column IDs live only in `lib/retention/monday.ts` — the
+  board has two "Customer start date" columns and `date_mm5ft19y` is the
+  real one. The **Status column's activity log** is what gives "booked in
+  period" and "ever sat a meeting"; it does not reach back to May, so the
+  payload carries `history.from` and the funnel states how many customers
+  are *assumed* to have sat a meeting (`assumedSatCount`).
+- **The lead-database app** (`ZacStayful/lead-database`, leads.stayful.co.uk)
+  owns churn, tenure-in-invoices, MRR and cancel reasons. JARVIS reads its
+  `GET /api/internal/retention` with `LEAD_DATABASE_INTERNAL_SECRET` (equal
+  to `JARVIS_INTERNAL_SECRET` there). Without it the view still shows the
+  funnel and marks churn "approximate" from the board's labels.
+
+The two are joined on **customer email** (`lib/retention/join.ts`). All the
+arithmetic is pure (`funnel.ts`, `join.ts`, `context.ts`) and tested in
+`lib/__tests__/retention.test.ts`; `/api/retention` just orchestrates.
+
+Chain: `handleRetentionRequest` runs after marketing and before news / nav
+intents, so "open the lead database" is not Lucy's and "churn rate" is not
+the sales dashboard's. The open is **consumed** like sales: ack → loading
+lines → a local spoken briefing (`buildRetentionBriefing`) when the data
+lands. While open, a question about its numbers (`isRetentionQuestion`)
+skips the sales detector and goes to Claude with `buildRetentionContextLine`
+as LIVE VIEW DATA; "close/back" closes it. Never write to the board or the
+lead database from here.
 
 ---
 
