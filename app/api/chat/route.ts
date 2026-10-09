@@ -55,7 +55,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    messages = body.messages ?? [];
+    // A failed turn leaves an empty assistant message in the client's
+    // history; Anthropic rejects empty content, so one failure would break
+    // every later request. Drop them.
+    messages = ((body.messages ?? []) as ApiMessage[]).filter(
+      (m) => typeof m.content === 'string' && m.content.trim() !== ''
+    );
     deep = body.deep ?? false;
     maxTokens = body.maxTokens ?? (deep ? 4096 : 2048);
     crossSessionContext =
@@ -192,15 +197,16 @@ Voice cadence: short sentences. This response will be spoken aloud.
         });
       }
 
-      try {
-        // ── Call Anthropic API with MCP + streaming ────────────────────────
-        const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      // MCP connector (beta mcp-client-2025-11-20): each server in
+      // mcp_servers needs a matching mcp_toolset entry in tools.
+      const callAnthropic = (withMcp: boolean) =>
+        fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'mcp-client-2025-04-04',
+            ...(withMcp && { 'anthropic-beta': 'mcp-client-2025-11-20' }),
           },
           body: JSON.stringify({
             model,
@@ -208,20 +214,38 @@ Voice cadence: short sentences. This response will be spoken aloud.
             system: systemPrompt,
             messages,
             stream: true,
-            ...(mcpServers.length > 0 && { mcp_servers: mcpServers }),
+            ...(withMcp && {
+              mcp_servers: mcpServers,
+              tools: mcpServers.map((s) => ({ type: 'mcp_toolset', mcp_server_name: s.name })),
+            }),
           }),
         });
 
+      const readError = async (res: Response) => {
+        const errorText = await res.text();
+        try {
+          return JSON.parse(errorText).error?.message ?? `Anthropic API error ${res.status}`;
+        } catch {
+          return errorText || `Anthropic API error ${res.status}`;
+        }
+      };
+
+      try {
+        // ── Call Anthropic API with MCP + streaming ────────────────────────
+        let anthropicRes = await callAnthropic(mcpServers.length > 0);
+
+        // A broken integration (expired token, server down) shouldn't silence
+        // JARVIS: retry once without the MCP servers.
+        if (!anthropicRes.ok && mcpServers.length > 0) {
+          console.error(
+            `[chat] Anthropic ${anthropicRes.status} with MCP servers (${mcpServers.map((s) => s.name).join(', ')}): ${await readError(anthropicRes)} — retrying without them`
+          );
+          anthropicRes = await callAnthropic(false);
+        }
+
         if (!anthropicRes.ok) {
-          const errorText = await anthropicRes.text();
-          let errorMessage = `Anthropic API error ${anthropicRes.status}`;
-          try {
-            const errorJson = JSON.parse(errorText);
-            errorMessage = errorJson.error?.message ?? errorMessage;
-          } catch {
-            // Use raw text if not JSON
-            errorMessage = errorText || errorMessage;
-          }
+          const errorMessage = await readError(anthropicRes);
+          console.error(`[chat] Anthropic ${anthropicRes.status} (${model}): ${errorMessage}`);
           send({ type: 'error', message: errorMessage });
           controller.close();
           return;
@@ -299,10 +323,9 @@ Voice cadence: short sentences. This response will be spoken aloud.
             // ── error event from Anthropic stream ──────────────────────────
             if (eventType === 'error') {
               const errDetails = event.error as Record<string, unknown> | undefined;
-              send({
-                type: 'error',
-                message: (errDetails?.message as string) ?? 'Stream error',
-              });
+              const message = (errDetails?.message as string) ?? 'Stream error';
+              console.error(`[chat] Anthropic stream error (${model}): ${message}`);
+              send({ type: 'error', message });
               controller.close();
               return;
             }
@@ -335,6 +358,7 @@ Voice cadence: short sentences. This response will be spoken aloud.
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[chat] ${message}`);
         send({ type: 'error', message });
         try {
           controller.close();

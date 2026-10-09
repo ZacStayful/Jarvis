@@ -465,6 +465,10 @@ export default function JarvisPage() {
     if (routedView !== "marketing-department") {
       clearAllViews();
       setRoutedView("marketing-department");
+      // Instant acknowledgement while the directors' reply is written. Not
+      // muzzled: the reply is still spoken, and cuts this off if it's ready
+      // first.
+      if (!muted) speak("Opening the marketing department.");
     }
     sendMessage(text);
     return true;
