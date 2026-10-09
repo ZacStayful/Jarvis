@@ -6,6 +6,8 @@ import {
   Activity,
   ChevronLeft,
   CheckSquare,
+  Ear,
+  EarOff,
   Eye,
   Mic,
   MicOff,
@@ -84,6 +86,7 @@ const SHORT_STATUS: Record<JARVISState, string> = {
 
 const GREETED_KEY = "jarvis_greeted";
 const VOICE_ALWAYS_ON_KEY = "jarvis_voice_always_on";
+const TALK_OVER_KEY = "jarvis_talk_over";
 // How long after speech ends a final transcript is still checked for echo.
 const ECHO_TAIL_MS = 2000;
 // How long a silent "thinking" phase runs before a spoken filler.
@@ -520,6 +523,26 @@ export default function JarvisPage() {
     } catch {}
   };
 
+  // Talk-over: keep the mic live while JARVIS speaks so Zac can interrupt
+  // him by voice. OFF by default and opt-in for headphones: on speakers the
+  // recogniser hears JARVIS's own voice back with small differences
+  // (digits, "£27", dropped "sir") that the echo filter cannot always
+  // catch, so he interrupts himself and then answers his own words. With
+  // talk-over off, Escape, typing and the mic button still interrupt.
+  const [talkOver, setTalkOver] = useState(false);
+  useEffect(() => {
+    try {
+      setTalkOver(window.localStorage.getItem(TALK_OVER_KEY) === "true");
+    } catch {}
+  }, []);
+  const toggleTalkOver = () => {
+    const next = !talkOver;
+    setTalkOver(next);
+    try {
+      window.localStorage.setItem(TALK_OVER_KEY, String(next));
+    } catch {}
+  };
+
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
       // Echo filter: while JARVIS is speaking (and for a moment after), a
@@ -534,19 +557,21 @@ export default function JarvisPage() {
     },
   });
 
-  // Barge-in: stop in-flight speech the moment the recogniser hears Zac
-  // start talking. partialTranscript fires as interim results arrive — much
-  // earlier than onFinalTranscript (which waits for silence). The echo
-  // filter discards partials that are our own voice via mic bleed-through.
+  // Barge-in (talk-over on only): stop in-flight speech the moment the
+  // recogniser hears Zac start talking. partialTranscript fires as interim
+  // results arrive — much earlier than onFinalTranscript (which waits for
+  // silence). The echo filter discards partials that are our own voice via
+  // mic bleed-through; with talk-over off the mic is not live during speech
+  // and this never fires.
   useEffect(() => {
-    if (!isSpeaking) return;
+    if (!isSpeaking || !talkOver) return;
     const partial = partialTranscript.trim();
     if (partial.length === 0) return;
     if (isLikelyEcho(partial, spokenText)) return;
     stopSpeaking();
     const streaming = messagesRef.current.find((m) => m.isStreaming);
     if (streaming) cancelledSpeechRef.current = streaming.id;
-  }, [partialTranscript, isSpeaking, stopSpeaking, spokenText]);
+  }, [partialTranscript, isSpeaking, talkOver, stopSpeaking, spokenText]);
 
   // Fetch a Claude-written voice summary of the briefing (or a category
   // subset) and speak it.
@@ -877,27 +902,30 @@ export default function JarvisPage() {
     ? "listening"
     : "idle";
 
-  // Mic policy. The mic is off only while JARVIS is *thinking* (a reply
-  // requested but nothing spoken yet) — otherwise what Zac said would be
-  // dropped by the in-flight guard. It stays live while he speaks so Zac can
-  // talk over him; the echo filter above handles his own voice.
+  // Mic policy. The mic is off while JARVIS is *thinking* (a reply requested
+  // but nothing spoken yet — otherwise what Zac said would be dropped by the
+  // in-flight guard) and, unless talk-over is on, while he is *speaking*
+  // (on speakers the mic hears him and he would interrupt himself). It
+  // re-arms shortly after speech ends; the 2 s echo tail on finals covers
+  // the last syllables still in the air.
   const isThinking = isLoading && !isSpeaking;
+  const micOff = isThinking || (isSpeaking && !talkOver);
   useEffect(() => {
     if (!voiceAlwaysOn) {
       if (isListening) stopListening();
       return;
     }
-    if (isThinking) {
+    if (micOff) {
       if (isListening) stopListening();
       return;
     }
     if (!isListening) {
       const t = setTimeout(() => {
         startListening().catch(() => {});
-      }, 400);
+      }, 600);
       return () => clearTimeout(t);
     }
-  }, [voiceAlwaysOn, isThinking, isListening, startListening, stopListening]);
+  }, [voiceAlwaysOn, micOff, isListening, startListening, stopListening]);
 
   // Auto-scroll message feed
   useEffect(() => {
@@ -972,6 +1000,8 @@ export default function JarvisPage() {
         onLogout={handleLogout}
         muted={muted}
         onToggleMuted={toggleMuted}
+        talkOver={talkOver}
+        onToggleTalkOver={toggleTalkOver}
         persona={activePersona}
         onSwitchPersona={(p) => switchPersona(p, true)}
       />
@@ -1077,6 +1107,8 @@ function Header({
   onLogout,
   muted,
   onToggleMuted,
+  talkOver,
+  onToggleTalkOver,
   persona,
   onSwitchPersona,
 }: {
@@ -1089,6 +1121,8 @@ function Header({
   onLogout: () => void;
   muted: boolean;
   onToggleMuted: () => void;
+  talkOver: boolean;
+  onToggleTalkOver: () => void;
   persona: PersonaId;
   onSwitchPersona: (p: PersonaId) => void;
 }) {
@@ -1237,6 +1271,28 @@ function Header({
           }}
         >
           {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+        </button>
+        <button
+          onClick={onToggleTalkOver}
+          title={
+            talkOver
+              ? "Talk-over on: mic stays live while JARVIS speaks (headphones). Click to turn off."
+              : "Talk-over off: mic pauses while JARVIS speaks. Turn on with headphones to interrupt by voice."
+          }
+          aria-label={talkOver ? "Turn talk-over off" : "Turn talk-over on"}
+          aria-pressed={talkOver}
+          style={{
+            background: "none",
+            border: `1px solid ${talkOver ? C.primary + "66" : C.border}`,
+            color: talkOver ? C.bright : C.textLow,
+            padding: "3px 6px",
+            borderRadius: 4,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          {talkOver ? <Ear size={12} /> : <EarOff size={12} />}
         </button>
         <button
           onClick={onLogout}

@@ -191,14 +191,21 @@ drain, `currentText` = the whole group (echo filter needs it).
 
 ## Mic policy, talk-over and echo
 
-- Mic is off **only while thinking** (`isLoading && !isSpeaking`). It stays
-  live while JARVIS speaks so Zac can talk over him. Never re-arm the mic
-  with ad-hoc timeouts; the always-on effect owns it.
-- Talk-over: a non-echo partial stops speech and marks the streaming
+- Mic is off while **thinking** (`isLoading && !isSpeaking`) and, unless
+  talk-over is on, while **speaking**. Never re-arm the mic with ad-hoc
+  timeouts; the always-on effect owns it (`micOff` in `app/page.tsx`).
+- **Talk-over is opt-in** (header ear button, localStorage
+  `jarvis_talk_over`, default off). With it on, the mic stays live during
+  speech and a non-echo partial stops speech and marks the streaming
   message `cancelledSpeechRef`; the final transcript then calls
   `useJARVIS.interrupt()` (abort, keep text so far) and sends the new
   message. `requestSeqRef` in useJARVIS makes stale request handlers
-  no-ops.
+  no-ops. **Lesson (shipped and reverted twice):** a live mic during TTS on
+  speakers makes JARVIS hear himself, interrupt himself and answer his own
+  words — the recogniser renders his speech back with digits, "£27" and
+  dropped "sir", which the echo filter cannot always catch. The filter
+  cannot carry a live mic alone; only headphones make talk-over safe. Do
+  not make it the default again.
 - Echo filter `isLikelyEcho` (`lib/voice-echo-filter.ts`) is applied to
   finals while speaking **or within 2 s of speech ending**, never later.
   Keep the bias toward the user: a blocked real response looks broken; an
