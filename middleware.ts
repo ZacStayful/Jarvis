@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC_LEAD_ROUTES = ["/api/qualifier", "/api/presentation", "/api/tracking"];
 
 // Server-to-server routes that can't carry a login cookie: Twilio
-// (/api/whatsapp), Calendly, Retell/Lucy functions and webhooks, n8n,
+// (/api/whatsapp), Calendly functions, Retell/Lucy functions and webhooks, n8n,
 // Resend (email tracking) and AssemblyAI (transcription callbacks).
 // Locked with JARVIS_API_SECRET once it is set — callers send it as the
 // x-jarvis-secret header, "Authorization: Bearer <secret>", or ?key=<secret>
@@ -24,9 +24,13 @@ const SERVICE_ROUTES = [
 
 // Routes that authenticate every request themselves, so they skip the
 // login check: the weekly-intelligence cron (Vercel sends
-// "Authorization: Bearer <CRON_SECRET>") and the approve/reject links in its
-// review email (HMAC-signed with REVIEW_SECRET, opened from Zac's inbox).
-const SELF_AUTHENTICATED_ROUTES = ["/api/cron", "/api/intelligence"];
+// "Authorization: Bearer <CRON_SECRET>"), the approve/reject links in its
+// review email (HMAC-signed with REVIEW_SECRET, opened from Zac's inbox) and
+// the Calendly webhook (checks Calendly's own signature once
+// CALENDLY_WEBHOOK_SIGNING_KEY is set). The webhook must never get a 401:
+// Calendly disables subscriptions after repeated non-2xx responses. Checked
+// before SERVICE_ROUTES, so the other /api/calendly routes stay locked.
+const SELF_AUTHENTICATED_ROUTES = ["/api/cron", "/api/intelligence", "/api/calendly/webhook"];
 
 const startsWithAny = (pathname: string, prefixes: string[]) =>
   prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));

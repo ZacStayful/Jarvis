@@ -220,13 +220,15 @@ silence. See the "WHEN YOU CAN'T TELL WHAT ZAC IS ASKING" section in
 ## API route security (middleware.ts)
 
 - Routes without the login cookie fall into three lists in `middleware.ts`:
-  `SERVICE_ROUTES` (Retell, n8n, Twilio, Resend, AssemblyAI, Calendly —
-  locked by `JARVIS_API_SECRET` via `x-jarvis-secret` / Bearer / `?key=`,
-  open until that env var is set) and `PUBLIC_LEAD_ROUTES` (leads'
+  `SERVICE_ROUTES` (Retell, n8n, Twilio, Resend, AssemblyAI, Calendly
+  functions — locked by `JARVIS_API_SECRET` via `x-jarvis-secret` / Bearer /
+  `?key=`, open until that env var is set) and `PUBLIC_LEAD_ROUTES` (leads'
   browsers — open, so each route validates input with
   `lib/public-lead-input.ts`) and `SELF_AUTHENTICATED_ROUTES` (`/api/cron`
-  checks `CRON_SECRET`, `/api/intelligence` checks HMAC-signed links). A new
-  no-login route goes in one of the three lists; never add a bare bypass.
+  checks `CRON_SECRET`, `/api/intelligence` checks HMAC-signed links,
+  `/api/calendly/webhook` checks Calendly's signature and must never 401 —
+  Calendly disables subscriptions after repeated errors). A new no-login
+  route goes in one of the three lists; never add a bare bypass.
 
 ---
 
