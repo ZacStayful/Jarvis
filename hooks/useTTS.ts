@@ -1,4 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PersonaId } from '@/types/jarvis';
+import { DEFAULT_PERSONA } from '@/lib/personas';
+
+// ─── useTTS ───────────────────────────────────────────────────────────────────
+//
+// Queued speech through the /api/speak ElevenLabs proxy.
+//
+//   speak(text, persona)   — interrupt: drop everything, say this now.
+//                            Acks, greetings, fillers, handovers, errors.
+//   enqueue(text, persona) — append: say this after whatever is queued.
+//                            Streamed reply chunks, chained replies.
+//   stop()                 — silence, clear the queue.
+//
+// Design notes:
+// - One HTMLAudioElement is reused for every chunk. iOS only lets audio
+//   play after a user gesture; once an element has played in a gesture it
+//   may keep playing new sources, which a fresh `new Audio()` per chunk
+//   would not.
+// - The next chunk's audio is fetched while the current one plays, so
+//   sentence-by-sentence playback has no gap beyond the first fetch.
+// - `isSpeaking` is true from the first enqueue until the queue drains, with
+//   no flicker between chunks. `onEnd` fires on a natural drain, never on
+//   stop(). The speak() promise resolves whether or not audio actually
+//   played — autoplay rejection is reported through onError and the queue
+//   is cleared, so `onEnd` remains the only real "it played" signal.
+// - `currentText` is everything enqueued since the last speak()/stop(): the
+//   echo filter in lib/voice-echo-filter.ts compares mic partials against
+//   it, and with chunked playback it needs the whole reply, not the chunk.
 
 interface UseTTSOptions {
   onStart?: () => void;
@@ -6,238 +34,237 @@ interface UseTTSOptions {
   onError?: (err: string) => void;
 }
 
-export interface SpeechPart {
-  text: string;
-  voiceId?: string; // ElevenLabs voice; omitted → the server's default (Jarvis)
-}
-
 interface UseTTSReturn {
-  speak: (text: string, voiceId?: string) => Promise<void>;
-  // Plays several parts back to back (e.g. Jarvis then Janet, each in their
-  // own voice). One stop()/barge-in cancels the whole sequence.
-  speakSequence: (parts: SpeechPart[]) => Promise<void>;
+  speak: (text: string, persona?: PersonaId) => Promise<void>;
+  enqueue: (text: string, persona?: PersonaId) => void;
   stop: () => void;
   isSpeaking: boolean;
-  // The text currently being spoken (or last spoken if isSpeaking is
-  // false). Used by app/page.tsx's barge-in filter to discard partial
-  // transcripts that match JARVIS's own voice picked up via mic echo.
   currentText: string;
   muted: boolean;
   setMuted: (muted: boolean) => void;
   toggleMuted: () => void;
 }
 
+interface QueueItem {
+  id: number;
+  text: string;
+  persona: PersonaId;
+  controller: AbortController;
+  blob?: Promise<Blob | null>;
+}
+
 const STORAGE_KEY = 'jarvis_tts_muted';
 
-function requestSpeech(text: string, voiceId: string | undefined, signal: AbortSignal) {
-  return fetch('/api/speak', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(voiceId ? { text, voiceId } : { text }),
-    signal,
-  });
+export function readStoredMuted(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
 }
 
 export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
-  const { onStart, onEnd, onError } = options;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentText, setCurrentText] = useState<string>('');
   const [muted, setMutedState] = useState<boolean>(false);
+
+  // Callbacks through refs so `speak`/`enqueue` are stable even when the
+  // caller passes inline functions (otherwise every effect depending on
+  // `speak` re-runs each render — the sales silence timer among them).
+  const callbacksRef = useRef(options);
+  callbacksRef.current = options;
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const queueRef = useRef<QueueItem[]>([]);
+  const processingRef = useRef(false);
+  const generationRef = useRef(0);
+  const nextIdRef = useRef(1);
+  const groupTextRef = useRef('');
+  const mutedRef = useRef(false);
 
   // Restore mute preference on mount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === 'true') setMutedState(true);
+    const stored = readStoredMuted();
+    mutedRef.current = stored;
+    if (stored) setMutedState(true);
   }, []);
 
   const setMuted = useCallback((next: boolean) => {
+    mutedRef.current = next;
     setMutedState(next);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, String(next));
+      try {
+        window.localStorage.setItem(STORAGE_KEY, String(next));
+      } catch {
+        // storage unavailable — in-memory only
+      }
     }
   }, []);
 
-  const cleanup = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
-    }
+  const releaseUrl = useCallback(() => {
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
     }
-    abortRef.current?.abort();
-    abortRef.current = null;
+  }, []);
+
+  const getAudio = useCallback((): HTMLAudioElement => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.preload = 'auto';
+    }
+    return audioRef.current;
   }, []);
 
   const stop = useCallback(() => {
-    cleanup();
+    generationRef.current += 1; // any in-flight processQueue loop exits
+    for (const item of queueRef.current) item.controller.abort();
+    queueRef.current = [];
+    processingRef.current = false;
+    const audio = audioRef.current;
+    if (audio) {
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } catch {
+        // nothing playing
+      }
+    }
+    releaseUrl();
     setIsSpeaking(false);
-  }, [cleanup]);
+  }, [releaseUrl]);
 
   const toggleMuted = useCallback(() => {
-    const next = !muted;
+    const next = !mutedRef.current;
     setMuted(next);
     if (next) stop();
-  }, [muted, setMuted, stop]);
+  }, [setMuted, stop]);
 
-  const speak = useCallback(
-    async (text: string, voiceId?: string) => {
-      if (!text.trim() || muted) return;
+  const fetchBlob = useCallback(async (item: QueueItem): Promise<Blob | null> => {
+    try {
+      const res = await fetch('/api/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: item.text, persona: item.persona }),
+        signal: item.controller.signal,
+      });
+      if (!res.ok) {
+        callbacksRef.current.onError?.(`TTS failed (HTTP ${res.status})`);
+        return null;
+      }
+      return await res.blob();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        callbacksRef.current.onError?.(
+          err instanceof Error ? err.message : 'Unknown TTS error'
+        );
+      }
+      return null;
+    }
+  }, []);
 
-      // Cancel anything in flight
-      cleanup();
-
-      setCurrentText(text);
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      try {
-        const res = await requestSpeech(text, voiceId, controller.signal);
-
-        if (!res.ok || !res.body) {
-          const errMsg = `TTS failed (HTTP ${res.status})`;
-          onError?.(errMsg);
-          return;
-        }
-
-        const blob = await res.blob();
-        if (controller.signal.aborted) return;
-
+  const playBlob = useCallback(
+    (blob: Blob): Promise<'ended' | 'blocked' | 'failed'> =>
+      new Promise(resolve => {
+        const audio = getAudio();
+        releaseUrl();
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
 
-        const audio = new Audio(url);
-        audioRef.current = audio;
-
-        audio.onended = () => {
-          setIsSpeaking(false);
-          if (objectUrlRef.current === url) {
-            URL.revokeObjectURL(url);
-            objectUrlRef.current = null;
-          }
-          audioRef.current = null;
-          onEnd?.();
-        };
-
-        audio.onerror = () => {
-          setIsSpeaking(false);
-          if (objectUrlRef.current === url) {
-            URL.revokeObjectURL(url);
-            objectUrlRef.current = null;
-          }
-          audioRef.current = null;
-          onError?.('Audio playback failed');
-        };
-
-        setIsSpeaking(true);
-        onStart?.();
-        await audio.play();
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-        const msg = err instanceof Error ? err.message : 'Unknown TTS error';
-        onError?.(msg);
-        setIsSpeaking(false);
-      }
-    },
-    [muted, cleanup, onStart, onEnd, onError]
+        audio.onended = () => resolve('ended');
+        audio.onerror = () => resolve('failed');
+        audio.src = url;
+        audio.play().catch(() => resolve('blocked'));
+      }),
+    [getAudio, releaseUrl]
   );
 
-  const speakSequence = useCallback(
-    async (parts: SpeechPart[]) => {
-      const queue = parts.filter((p) => p.text.trim());
-      if (queue.length === 0 || muted) return;
-      if (queue.length === 1) return speak(queue[0].text, queue[0].voiceId);
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    const generation = generationRef.current;
+    let started = false;
 
-      // Cancel anything in flight
-      cleanup();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const { signal } = controller;
+    while (queueRef.current.length > 0 && generationRef.current === generation) {
+      const item = queueRef.current[0];
+      item.blob ??= fetchBlob(item);
+      // Prefetch the next chunk while this one plays.
+      const next = queueRef.current[1];
+      if (next) next.blob ??= fetchBlob(next);
 
-      // Request every part up front so each is ready when the one before it
-      // finishes; a failed part is skipped rather than ending the sequence.
-      const blobs = queue.map((p) =>
-        requestSpeech(p.text, p.voiceId, signal)
-          .then((res) => {
-            if (res.ok && res.body) return res.blob();
-            onError?.(`TTS failed (HTTP ${res.status})`);
-            return null;
-          })
-          .catch((err) => {
-            if ((err as Error).name !== 'AbortError') {
-              onError?.(err instanceof Error ? err.message : 'Unknown TTS error');
-            }
-            return null;
-          })
-      );
+      const blob = await item.blob;
+      if (generationRef.current !== generation) break;
 
-      // Resolves true when the clip plays to the end, false if it fails or
-      // the sequence is stopped.
-      const playToEnd = (blob: Blob) =>
-        new Promise<boolean>((resolve) => {
-          const url = URL.createObjectURL(blob);
-          objectUrlRef.current = url;
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          const finish = (ok: boolean) => {
-            signal.removeEventListener('abort', onAbort);
-            if (objectUrlRef.current === url) {
-              URL.revokeObjectURL(url);
-              objectUrlRef.current = null;
-            }
-            if (audioRef.current === audio) audioRef.current = null;
-            resolve(ok);
-          };
-          const onAbort = () => finish(false);
-          signal.addEventListener('abort', onAbort);
-          audio.onended = () => finish(true);
-          audio.onerror = () => {
-            // stop() clears the src, which also fires an error — not a failure
-            if (!signal.aborted) onError?.('Audio playback failed');
-            finish(false);
-          };
-          audio.play().catch((err) => {
-            if ((err as Error).name !== 'AbortError') {
-              onError?.(err instanceof Error ? err.message : 'Audio playback failed');
-            }
-            finish(false);
-          });
-        });
-
-      let started = false;
-      for (let i = 0; i < queue.length; i++) {
-        const blob = await blobs[i];
-        if (signal.aborted) return;
-        if (!blob) continue;
-        setCurrentText(queue[i].text);
-        if (!started) {
-          // isSpeaking stays true across the gaps between parts so the
-          // always-on mic doesn't re-arm mid-reply.
-          started = true;
-          setIsSpeaking(true);
-          onStart?.();
-        }
-        const played = await playToEnd(blob);
-        if (signal.aborted) return;
-        if (!played) break;
+      if (!blob) {
+        queueRef.current.shift();
+        continue;
       }
-      if (abortRef.current === controller) abortRef.current = null;
-      setIsSpeaking(false);
-      if (started) onEnd?.();
+
+      if (!started) {
+        started = true;
+        callbacksRef.current.onStart?.();
+      }
+
+      const outcome = await playBlob(blob);
+      if (generationRef.current !== generation) break;
+      queueRef.current.shift();
+
+      if (outcome === 'blocked') {
+        // Autoplay refused (no user gesture yet). Nothing after this will
+        // play either, so drop the rest and let the caller re-arm on a
+        // gesture. onEnd deliberately does NOT fire.
+        queueRef.current = [];
+        processingRef.current = false;
+        setIsSpeaking(false);
+        callbacksRef.current.onError?.('Audio playback blocked');
+        return;
+      }
+      if (outcome === 'failed') {
+        callbacksRef.current.onError?.('Audio playback failed');
+      }
+    }
+
+    if (generationRef.current !== generation) return; // stopped mid-way
+    processingRef.current = false;
+    releaseUrl();
+    setIsSpeaking(false);
+    if (started) callbacksRef.current.onEnd?.();
+  }, [fetchBlob, playBlob, releaseUrl]);
+
+  const enqueue = useCallback(
+    (text: string, persona: PersonaId = DEFAULT_PERSONA) => {
+      const trimmed = text.trim();
+      if (!trimmed || mutedRef.current) return;
+      queueRef.current.push({
+        id: nextIdRef.current++,
+        text: trimmed,
+        persona,
+        controller: new AbortController(),
+      });
+      groupTextRef.current = `${groupTextRef.current} ${trimmed}`.trim();
+      setCurrentText(groupTextRef.current);
+      setIsSpeaking(true);
+      void processQueue();
     },
-    [muted, speak, cleanup, onStart, onEnd, onError]
+    [processQueue]
+  );
+
+  const speak = useCallback(
+    async (text: string, persona: PersonaId = DEFAULT_PERSONA) => {
+      if (!text.trim() || mutedRef.current) return;
+      stop();
+      groupTextRef.current = '';
+      enqueue(text, persona);
+    },
+    [stop, enqueue]
   );
 
   useEffect(() => {
-    return () => cleanup();
-  }, [cleanup]);
+    return () => stop();
+  }, [stop]);
 
-  return { speak, speakSequence, stop, isSpeaking, currentText, muted, setMuted, toggleMuted };
+  return { speak, enqueue, stop, isSpeaking, currentText, muted, setMuted, toggleMuted };
 }

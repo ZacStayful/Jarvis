@@ -1,13 +1,22 @@
 // hooks/useJARVIS.ts
-// ─── useJARVIS Hook (Phase 8) ─────────────────────────────────────────────────
+// ─── useJARVIS Hook ───────────────────────────────────────────────────────────
 //
-// Merged feature set across phases:
-//   Phase 4 — Typed message union (TextMessage | ApprovalMessage),
-//             <action_request> parsing, approveAction / denyAction
-//   Phase 5 — onRoute callback for view navigation events
-//   Phase 8 — Session persistence (Vercel KV), cross-session context
-//             injection, ElevenLabs voice streaming, request dedup,
-//             timing telemetry, endSession() summarisation
+// Owns the conversation with /api/chat: message history, streaming, approval
+// cards, interrupts, session persistence (Vercel KV) and end-of-session
+// summarisation.
+//
+// Speech is NOT handled here. app/page.tsx drives useTTS from the message
+// stream so each member of staff speaks in their own voice as their text
+// arrives.
+//
+// SSE events consumed (see app/api/chat/route.ts):
+//   { type: 'start',   model }
+//   { type: 'speaker', persona }   — who is talking from here on (hand-offs)
+//   { type: 'text',    text }
+//   { type: 'route',   view, params }
+//   { type: 'error',   message }
+//   [DONE]
+//
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -20,6 +29,8 @@ import type {
   UseJARVISOptions as BaseUseJARVISOptions,
   UseJARVISReturn as BaseUseJARVISReturn,
   ApiMessage,
+  PersonaId,
+  SendOptions,
 } from '@/types/jarvis';
 import type { ViewRoute } from '@/lib/commandRouter';
 import {
@@ -33,11 +44,7 @@ import {
   type StoredMessage,
   type SessionContext,
 } from '@/lib/kv-memory';
-import {
-  useJARVISVoice,
-  splitIntoSpeakableChunks,
-  stripMarkdownForSpeech,
-} from '@/lib/voice-config';
+import { getPersona, DEFAULT_PERSONA } from '@/lib/personas';
 
 export type { ViewRoute };
 
@@ -45,19 +52,25 @@ export type { ViewRoute };
 
 type UseJARVISOptions = BaseUseJARVISOptions & {
   onRoute?: (view: ViewRoute, params?: Record<string, unknown>) => void;
+  /** Fired when the server hands the reply to the other member of staff. */
+  onSpeakerChange?: (persona: PersonaId) => void;
   crossSessionContext?: string;
-  // The routed view on screen; /api/chat keeps the marketing department's
-  // context for follow-ups while 'marketing-department' is open.
-  activeView?: string | null;
-  voiceEnabled?: boolean;
   persistSession?: boolean;
 };
 
 interface UseJARVISReturn extends BaseUseJARVISReturn {
-  isSpeaking: boolean;
   sessionId: string;
   endSession: () => Promise<void>;
-  stopSpeaking: () => void;
+  /**
+   * Abort the in-flight reply (talk-over). Keeps whatever text has already
+   * streamed as a finished message. Returns true if something was aborted.
+   */
+  interrupt: () => boolean;
+  /**
+   * Add an assistant message that is shown in the feed but never sent to the
+   * API, KV or the EOD transcript (greetings, handovers). Returns its id.
+   */
+  addLocalAssistantMessage: (content: string, speaker?: PersonaId) => string;
   performanceStats: {
     avgTtfbMs: number;
     avgTotalMs: number;
@@ -67,11 +80,33 @@ interface UseJARVISReturn extends BaseUseJARVISReturn {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+const SESSION_STORAGE_KEY = 'jarvis_session_id';
+const SUMMARISE_THROTTLE_MS = 5 * 60 * 1000;
+const STORED_MESSAGE_CHAR_CAP = 1000;
+
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function extractActionRequest(text: string): {
+/**
+ * Same session id for the life of the tab, so a refresh resumes the
+ * conversation from KV instead of starting a blank one. A new tab is a new
+ * session.
+ */
+function resolveSessionId(): string {
+  if (typeof window === 'undefined') return generateSessionId();
+  try {
+    const existing = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) return existing;
+    const fresh = generateSessionId();
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, fresh);
+    return fresh;
+  } catch {
+    return generateSessionId();
+  }
+}
+
+export function extractActionRequest(text: string): {
   cleanText: string;
   actionRequest: ActionRequest | null;
 } {
@@ -87,26 +122,34 @@ function extractActionRequest(text: string): {
   return { cleanText, actionRequest };
 }
 
-function toApiMessages(messages: Message[]): ApiMessage[] {
-  return messages
-    // Empty content (a reply that failed before any text) is rejected by
-    // the API and would break every later request.
-    .filter(m => !m.isStreaming && m.content.trim() !== '')
-    .map(m => ({
-      role: m.role,
-      content: m.type === 'approval' ? m.content : (m as TextMessage).content,
-    }));
+/** The server strips hand-off tags; this is belt and braces for the UI. */
+export function stripHandoff(text: string): string {
+  return text.replace(/<handoff\b[^>]*>[\s\S]*?<\/handoff>\s*$/i, '').trimEnd();
+}
+
+function isConversational(m: Message): boolean {
+  return !m.local && !m.isStreaming && m.content.trim().length > 0;
+}
+
+/**
+ * History as the Messages API wants it: no local/UI-only messages, no empty
+ * content, and the first turn must come from the user.
+ */
+export function toApiMessages(messages: Message[]): ApiMessage[] {
+  const eligible = messages.filter(isConversational);
+  const firstUser = eligible.findIndex(m => m.role === 'user');
+  if (firstUser < 0) return [];
+  return eligible.slice(firstUser).map(m => ({ role: m.role, content: m.content }));
 }
 
 function toStoredMessages(messages: Message[]): StoredMessage[] {
-  return messages
-    .filter(m => !m.isStreaming)
-    .map(m => ({
-      role: m.role,
-      content: m.type === 'approval' ? m.content : (m as TextMessage).content,
-      timestamp: m.timestamp.toISOString(),
-      model: m.model,
-    }));
+  return messages.filter(isConversational).map(m => ({
+    role: m.role,
+    content: m.content,
+    timestamp: m.timestamp.toISOString(),
+    model: m.model,
+    speaker: m.role === 'assistant' ? (m.speaker ?? DEFAULT_PERSONA) : undefined,
+  }));
 }
 
 function fromStoredMessages(stored: StoredMessage[]): Message[] {
@@ -117,18 +160,20 @@ function fromStoredMessages(stored: StoredMessage[]): Message[] {
     content: m.content,
     timestamp: new Date(m.timestamp),
     model: m.model,
+    speaker: m.role === 'assistant' ? (m.speaker ?? DEFAULT_PERSONA) : undefined,
     isStreaming: false,
   }));
 }
 
 async function memoryApi(
   action: string,
-  payload: Record<string, unknown> = {}
+  payload: Record<string, unknown> = {},
+  init: { keepalive?: boolean } = {}
 ): Promise<Record<string, unknown>> {
   // Persistence requires both NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN (client) and
-  // JARVIS_INTERNAL_TOKEN (server) to be set in Vercel. If the client token
-  // is missing, every call would 401 — short-circuit so we don't spam
-  // the network tab with failed requests on every chat round-trip.
+  // JARVIS_INTERNAL_TOKEN (server) to be set to the same value in Vercel. If
+  // the client token is missing, short-circuit so we don't spam the network
+  // tab with 401s on every round-trip.
   const token = process.env.NEXT_PUBLIC_JARVIS_INTERNAL_TOKEN;
   if (!token) throw new Error('memory_disabled');
 
@@ -139,6 +184,7 @@ async function memoryApi(
       'x-jarvis-token': token,
     },
     body: JSON.stringify({ action, ...payload }),
+    keepalive: init.keepalive ?? false,
   });
   if (!res.ok) throw new Error(`Memory API ${res.status}`);
   return res.json();
@@ -151,9 +197,8 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     onStateChange,
     onError,
     onRoute,
+    onSpeakerChange,
     crossSessionContext = '',
-    activeView,
-    voiceEnabled = true,
     persistSession = true,
   } = options;
 
@@ -161,15 +206,27 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [jarvisState, setJARVISState] = useState<JARVISState>('idle');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoadingState] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
-  const [sessionId] = useState<string>(generateSessionId);
+  const [sessionId] = useState<string>(resolveSessionId);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
 
-  // ── State helpers ─────────────────────────────────────────────────────────
+  // Mirrors of state that callbacks need synchronously (interrupt + send in
+  // the same tick must not race React's batched updates).
+  const isLoadingRef = useRef(false);
+  // Every request gets a sequence number. Completion/error handlers of a
+  // request that is no longer current (interrupted or superseded) do nothing,
+  // so a stale `finally` can never clobber the new request's loading state.
+  const requestSeqRef = useRef(0);
+  const lastSummaryRef = useRef<{ at: number; count: number }>({ at: 0, count: 0 });
+
+  const setIsLoading = useCallback((next: boolean) => {
+    isLoadingRef.current = next;
+    setIsLoadingState(next);
+  }, []);
 
   const updateState = useCallback(
     (state: JARVISState) => {
@@ -179,36 +236,24 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     [onStateChange]
   );
 
-  // ── Voice (Phase 8) ───────────────────────────────────────────────────────
-
-  const { speak, stop: stopSpeaking, isSpeaking } = useJARVISVoice({
-    enabled: voiceEnabled,
-    onSpeakingChange: speaking => {
-      if (speaking) {
-        updateState('speaking');
-      } else if (jarvisState === 'speaking') {
-        updateState('idle');
-      }
-    },
-  });
-
-  // ── Session persistence (Phase 8) ─────────────────────────────────────────
+  // ── Session persistence ───────────────────────────────────────────────────
 
   const debouncedSaverRef = useRef(
     createDebouncedSessionSaver(async () => {
       if (!persistSession) return;
       const msgs = messagesRef.current;
-      if (!msgs.length) return;
+      const stored = toStoredMessages(msgs);
+      if (!stored.length) return;
 
       const ctx: Partial<SessionContext> = {
         sessionId,
         lastActiveAt: new Date().toISOString(),
-        messageCount: msgs.length,
+        messageCount: stored.length,
       };
 
       await memoryApi('save_session', {
         sessionId,
-        messages: toStoredMessages(msgs),
+        messages: stored,
         context: ctx,
       }).catch(() => {
         // Non-fatal — session save failure doesn't break JARVIS
@@ -216,7 +261,10 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     }, 2000)
   );
 
-  // Load previous session on mount
+  // Restore the same tab's conversation after a refresh. Restored messages
+  // keep their original timestamps so the speech effects in page.tsx (which
+  // only voice messages newer than mount) stay quiet. Anything already in the
+  // feed (the greeting) stays after the restored history.
   useEffect(() => {
     if (!persistSession) return;
 
@@ -226,7 +274,8 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         const data = await memoryApi('load_session', { sessionId });
         const storedMsgs = (data.messages as StoredMessage[]) ?? [];
         if (storedMsgs.length > 0) {
-          setMessages(fromStoredMessages(storedMsgs));
+          const restored = fromStoredMessages(storedMsgs);
+          setMessages(prev => [...restored, ...prev]);
         }
       } catch {
         // Non-fatal — start fresh
@@ -237,25 +286,66 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Flush session on page unload
-  useEffect(() => {
-    const handleUnload = () => {
-      debouncedSaverRef.current.flush().catch(() => {});
-    };
-    window.addEventListener('beforeunload', handleUnload);
-    return () => window.removeEventListener('beforeunload', handleUnload);
-  }, []);
+  // ─── Local (UI-only) assistant messages ────────────────────────────────────
+
+  const addLocalAssistantMessage = useCallback(
+    (content: string, speaker: PersonaId = DEFAULT_PERSONA): string => {
+      const id = generateId();
+      const msg: TextMessage = {
+        id,
+        role: 'assistant',
+        type: 'text',
+        content,
+        timestamp: new Date(),
+        isStreaming: false,
+        local: true,
+        speaker,
+      };
+      setMessages(prev => [...prev, msg]);
+      return id;
+    },
+    []
+  );
+
+  // ─── Interrupt (talk-over) ─────────────────────────────────────────────────
+
+  const interrupt = useCallback((): boolean => {
+    if (!isLoadingRef.current) return false;
+    requestSeqRef.current += 1; // invalidate the in-flight request's handlers
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+
+    // Keep whatever has streamed so far as a finished message; drop empties.
+    setMessages(prev =>
+      prev.flatMap(m => {
+        if (!m.isStreaming) return [m];
+        const clean = extractActionRequest(stripHandoff(m.content)).cleanText.trim();
+        if (!clean) return [];
+        return [{ ...m, content: clean, isStreaming: false } as Message];
+      })
+    );
+    setCurrentResponse('');
+    setIsLoading(false);
+    updateState('idle');
+    return true;
+  }, [setIsLoading, updateState]);
 
   // ─── Core send logic ───────────────────────────────────────────────────────
 
   const sendToAPI = useCallback(
     async (
       userContent: string,
-      deep = false,
-      currentMessages: Message[]
+      deep: boolean,
+      currentMessages: Message[],
+      opts: SendOptions
     ) => {
       abortControllerRef.current?.abort();
-      abortControllerRef.current = new AbortController();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const seq = ++requestSeqRef.current;
+      const isCurrent = () => requestSeqRef.current === seq;
+
+      const persona: PersonaId = opts.persona ?? DEFAULT_PERSONA;
 
       const userMsg: TextMessage = {
         id: generateId(),
@@ -273,18 +363,117 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
 
       const apiMessages = toApiMessages(updatedMessages);
 
-      const assistantMsgId = generateId();
-      const streamingPlaceholder: TextMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        type: 'text',
-        content: '',
-        timestamp: new Date(),
-        isStreaming: true,
-      };
-      setMessages(prev => [...prev, streamingPlaceholder]);
+      // The streaming placeholder. A hand-off mid-reply closes it and opens a
+      // second one for the other speaker, so these are `let`.
+      let assistantMsgId = generateId();
+      let speaker: PersonaId = persona;
+      let fullText = '';
+      let modelUsed = '';
+      let firstChunk = true;
 
-      timingTracker.startTracking(assistantMsgId);
+      const pushPlaceholder = (id: string, spk: PersonaId) => {
+        const placeholder: TextMessage = {
+          id,
+          role: 'assistant',
+          type: 'text',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true,
+          speaker: spk,
+        };
+        setMessages(prev => [...prev, placeholder]);
+        timingTracker.startTracking(id, modelUsed || undefined);
+      };
+
+      const finaliseCurrent = () => {
+        const id = assistantMsgId;
+        const spk = speaker;
+        const model = modelUsed;
+        const { cleanText, actionRequest } = extractActionRequest(stripHandoff(fullText));
+        if (actionRequest) {
+          const approvalMsg: ApprovalMessage = {
+            id,
+            role: 'assistant',
+            type: 'approval',
+            content: cleanText,
+            timestamp: new Date(),
+            isStreaming: false,
+            model,
+            speaker: spk,
+            actionRequest,
+            status: 'pending',
+          };
+          setMessages(prev => prev.map(m => (m.id === id ? approvalMsg : m)));
+        } else {
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === id
+                ? ({ ...m, content: cleanText, model, isStreaming: false, speaker: spk } as TextMessage)
+                : m
+            )
+          );
+        }
+      };
+
+      const handleEvent = (parsed: Record<string, unknown>) => {
+        switch (parsed.type) {
+          case 'route':
+            onRoute?.(
+              parsed.view as ViewRoute,
+              parsed.params as Record<string, unknown> | undefined
+            );
+            break;
+
+          case 'start':
+            modelUsed = String(parsed.model ?? '');
+            timingTracker.startTracking(assistantMsgId, modelUsed);
+            break;
+
+          case 'speaker': {
+            const next = parsed.persona as PersonaId;
+            if (fullText.trim()) {
+              // Hand-off: close the current speaker's message, open the next.
+              finaliseCurrent();
+              assistantMsgId = generateId();
+              fullText = '';
+              firstChunk = true;
+              speaker = next;
+              pushPlaceholder(assistantMsgId, next);
+            } else {
+              speaker = next;
+              const id = assistantMsgId;
+              setMessages(prev =>
+                prev.map(m => (m.id === id ? ({ ...m, speaker: next } as Message) : m))
+              );
+            }
+            onSpeakerChange?.(next);
+            break;
+          }
+
+          case 'text': {
+            if (firstChunk) {
+              timingTracker.markFirstByte(assistantMsgId);
+              firstChunk = false;
+            }
+            fullText += String(parsed.text ?? '');
+            setCurrentResponse(fullText);
+            const id = assistantMsgId;
+            const model = modelUsed;
+            const text = fullText;
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === id ? ({ ...m, content: text, model } as TextMessage) : m
+              )
+            );
+            break;
+          }
+
+          case 'error':
+            throw new Error(String(parsed.message ?? 'Stream error'));
+        }
+      };
+
+      pushPlaceholder(assistantMsgId, speaker);
 
       try {
         const res = await fetch('/api/chat', {
@@ -295,9 +484,13 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
             deep,
             maxTokens: deep ? 4096 : 2048,
             crossSessionContext: crossSessionContext || undefined,
-            activeView: activeView || undefined,
+            persona,
+            inputMode: opts.inputMode ?? 'text',
+            activeView: opts.activeView,
+            viewJustOpened: opts.viewJustOpened ?? false,
+            viewContext: opts.viewContext,
           }),
-          signal: abortControllerRef.current.signal,
+          signal: controller.signal,
         });
 
         if (!res.ok) {
@@ -308,182 +501,112 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
         if (!reader) throw new Error('No response stream');
 
         const decoder = new TextDecoder();
-        let fullText = '';
-        let modelUsed = '';
-        let firstChunk = true;
-        let streamError: string | null = null;
-        let sseBuffer = ''; // an SSE line can arrive split across chunks
+        let buffer = '';
+        let done = false;
 
-        // Voice: buffer sentences for streaming TTS
-        let spokenUpTo = 0;
-        const speakPending = async (text: string, force = false) => {
-          if (!voiceEnabled) return;
-          const chunks = splitIntoSpeakableChunks(text.slice(spokenUpTo));
-          // Hold back last chunk unless force=true — it may be incomplete
-          const toSpeak = force ? chunks : chunks.slice(0, -1);
-          for (const chunk of toSpeak) {
-            spokenUpTo += chunk.length;
-            await speak(stripMarkdownForSpeech(chunk), 'normal');
-          }
-        };
+        while (!done) {
+          const { done: streamDone, value } = await reader.read();
+          if (streamDone) break;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          sseBuffer += decoder.decode(value, { stream: true });
-          const lines = sseBuffer.split('\n');
-          sseBuffer = lines.pop() ?? '';
+          // Carry a partial line across network chunks — a JSON event split
+          // over two reads used to be dropped silently.
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
 
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue;
             const raw = line.slice(6).trim();
-            if (raw === '[DONE]') break;
-
+            if (!raw) continue;
+            if (raw === '[DONE]') {
+              done = true;
+              break;
+            }
+            let parsed: Record<string, unknown>;
             try {
-              const parsed = JSON.parse(raw);
-
-              if (parsed.type === 'route') {
-                onRoute?.(
-                  parsed.view as ViewRoute,
-                  parsed.params as Record<string, unknown> | undefined
-                );
-              }
-
-              if (parsed.type === 'start') {
-                modelUsed = parsed.model;
-                timingTracker.startTracking(assistantMsgId, modelUsed);
-              }
-
-              if (parsed.type === 'text') {
-                if (firstChunk) {
-                  timingTracker.markFirstByte(assistantMsgId);
-                  firstChunk = false;
-                }
-                fullText += parsed.text;
-                setCurrentResponse(fullText);
-
-                setMessages(prev =>
-                  prev.map(m =>
-                    m.id === assistantMsgId
-                      ? ({ ...m, content: fullText, model: modelUsed } as TextMessage)
-                      : m
-                  )
-                );
-
-                // Stream to voice in sentence-complete chunks
-                await speakPending(fullText);
-              }
-
-              if (parsed.type === 'error') {
-                streamError = String(parsed.message ?? 'Unknown error');
-              }
+              parsed = JSON.parse(raw) as Record<string, unknown>;
             } catch {
-              // Skip malformed SSE lines
+              continue; // malformed line — skip it, never the whole stream
+            }
+            handleEvent(parsed); // 'error' events throw from here
+          }
+        }
+
+        if (buffer.startsWith('data: ')) {
+          const raw = buffer.slice(6).trim();
+          if (raw && raw !== '[DONE]') {
+            try {
+              handleEvent(JSON.parse(raw) as Record<string, unknown>);
+            } catch (err) {
+              if (!(err instanceof SyntaxError)) throw err;
             }
           }
         }
 
-        // Surface server errors (handled below) instead of finishing with an
-        // empty reply.
-        if (streamError) throw new Error(streamError);
+        if (!isCurrent()) return; // interrupted — interrupt() already tidied up
 
-        // Speak any remaining text
-        if (voiceEnabled && fullText.slice(spokenUpTo).trim()) {
-          await speakPending(fullText, true);
+        if (!fullText.trim()) {
+          throw new Error('The reply came back empty.');
         }
 
         timingTracker.markComplete(assistantMsgId, fullText);
-
-        // ── Finalise: check for action request in response ─────────────────
-        const { cleanText, actionRequest } = extractActionRequest(fullText);
-
-        if (actionRequest) {
-          const approvalMsg: ApprovalMessage = {
-            id: assistantMsgId,
-            role: 'assistant',
-            type: 'approval',
-            content: cleanText,
-            timestamp: new Date(),
-            isStreaming: false,
-            model: modelUsed,
-            actionRequest,
-            status: 'pending',
-          };
-          setMessages(prev =>
-            prev.map(m => (m.id === assistantMsgId ? approvalMsg : m))
-          );
-        } else {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMsgId
-                ? ({
-                    ...m,
-                    content: fullText,
-                    model: modelUsed,
-                    isStreaming: false,
-                  } as TextMessage)
-                : m
-            )
-          );
-        }
-
+        finaliseCurrent();
         setCurrentResponse('');
-        if (!isSpeaking) updateState('idle');
+        updateState('idle');
 
-        // Trigger debounced KV save
         debouncedSaverRef.current.save();
       } catch (error) {
-        if ((error as Error).name === 'AbortError') {
-          setMessages(prev => prev.filter(m => m.id !== assistantMsgId));
-          updateState('idle');
-          return;
-        }
+        if ((error as Error).name === 'AbortError' || !isCurrent()) return;
+
         const errMessage = error instanceof Error ? error.message : 'Unknown error';
         onError?.(errMessage);
+
+        // Friendly line in the speaker's voice; the technical detail is kept
+        // on the message for the UI only. Marked local so it is never sent
+        // back to the API as something JARVIS "said".
+        const id = assistantMsgId;
+        const spk = speaker;
+        const friendly = getPersona(spk).errorLine;
         setMessages(prev =>
           prev.map(m =>
-            m.id === assistantMsgId
+            m.id === id
               ? ({
-                  ...m,
+                  id,
+                  role: 'assistant',
                   type: 'text',
-                  content: `I encountered an error: ${errMessage}. Please try again.`,
+                  content: friendly,
+                  timestamp: new Date(),
                   isStreaming: false,
+                  local: true,
+                  speaker: spk,
+                  errorDetail: errMessage,
                 } as TextMessage)
               : m
           )
         );
+        setCurrentResponse('');
         updateState('idle');
       } finally {
-        setIsLoading(false);
+        if (isCurrent()) setIsLoading(false);
       }
     },
-    [
-      updateState,
-      onError,
-      onRoute,
-      crossSessionContext,
-      activeView,
-      voiceEnabled,
-      speak,
-      isSpeaking,
-    ]
+    [updateState, onError, onRoute, onSpeakerChange, crossSessionContext, setIsLoading]
   );
 
   // ─── Public: sendMessage (deduped) ─────────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (content: string, deep = false) => {
-      if (!content.trim() || isLoading) return;
+    async (content: string, deep = false, opts: SendOptions = {}) => {
+      if (!content.trim() || isLoadingRef.current) return;
       const dedupeKey = `${content.slice(0, 40)}-${deep}`;
       await requestDedup.dedupe(dedupeKey, () =>
-        sendToAPI(content, deep, messagesRef.current)
+        sendToAPI(content, deep, messagesRef.current, opts)
       );
     },
-    [isLoading, sendToAPI]
+    [sendToAPI]
   );
 
-  // ─── Public: approveAction / denyAction (Phase 4) ──────────────────────────
+  // ─── Public: approveAction / denyAction ────────────────────────────────────
 
   const approveAction = useCallback(
     async (messageId: string) => {
@@ -491,13 +614,16 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
       if (!msg || msg.type !== 'approval') return;
       setMessages(prev =>
         prev.map(m =>
-          m.id === messageId
+          m.id === messageId && m.type === 'approval'
             ? ({ ...m, status: 'approved' } as ApprovalMessage)
             : m
         )
       );
       const approvalContent = `JARVIS_APPROVAL: ${JSON.stringify(msg.actionRequest)}`;
-      await sendToAPI(approvalContent, false, messagesRef.current);
+      await sendToAPI(approvalContent, false, messagesRef.current, {
+        inputMode: 'text',
+        persona: msg.speaker ?? DEFAULT_PERSONA,
+      });
     },
     [sendToAPI]
   );
@@ -515,22 +641,36 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
   // ─── Public: clearMessages ─────────────────────────────────────────────────
 
   const clearMessages = useCallback(() => {
+    requestSeqRef.current += 1;
     abortControllerRef.current?.abort();
-    stopSpeaking();
+    abortControllerRef.current = null;
     setMessages([]);
     setCurrentResponse('');
     setJARVISState('idle');
     setIsLoading(false);
-  }, [stopSpeaking]);
+  }, [setIsLoading]);
 
-  // ─── Public: endSession (Phase 8) ──────────────────────────────────────────
+  // ─── Public: endSession ────────────────────────────────────────────────────
+  //
+  // Called when the tab is hidden or closed. Uses a keepalive request so the
+  // summarisation survives the page going away, with the payload trimmed to
+  // stay under the keepalive body cap. Throttled so repeated hide/show cycles
+  // don't re-summarise an unchanged conversation.
 
   const endSession = useCallback(async () => {
     await debouncedSaverRef.current.flush();
-    const stored = toStoredMessages(messagesRef.current);
+    const stored = toStoredMessages(messagesRef.current)
+      .slice(-40)
+      .map(m => ({ ...m, content: m.content.slice(0, STORED_MESSAGE_CHAR_CAP) }));
     if (!stored.length) return;
+
+    const now = Date.now();
+    const last = lastSummaryRef.current;
+    if (now - last.at < SUMMARISE_THROTTLE_MS && last.count === stored.length) return;
+    lastSummaryRef.current = { at: now, count: stored.length };
+
     try {
-      await memoryApi('summarise_session', { sessionId, messages: stored });
+      await memoryApi('summarise_session', { sessionId, messages: stored }, { keepalive: true });
     } catch (err) {
       console.warn('[JARVIS] Session summarisation failed:', err);
     }
@@ -547,11 +687,10 @@ export function useJARVIS(options: UseJARVISOptions = {}): UseJARVISReturn {
     denyAction,
     clearMessages,
     currentResponse,
-    // Phase 8 additions
-    isSpeaking,
     sessionId,
     endSession,
-    stopSpeaking,
+    interrupt,
+    addLocalAssistantMessage,
     performanceStats,
   };
 }

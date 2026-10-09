@@ -193,17 +193,13 @@ function renderInline(text: string): React.ReactNode {
   );
 }
 
-// ─── Marketing department speakers ────────────────────────────────────────────
-// Department replies tag each director's part with [JARVIS] / [JANET]. Label
-// each part with the director's name; an untagged reply (one Jarvis part)
-// renders exactly as before.
+// ─── Tagged (multi-speaker) replies ───────────────────────────────────────────
+// A marketing-department reply may carry inline [JARVIS]/[JANET] tags. Each
+// part gets its director's label; the message-level speaker label is
+// skipped for these.
 
-function renderSpeakerContent(text: string): React.ReactNode {
-  const parts = splitBySpeaker(text);
-  if (parts.length <= 1 && parts[0]?.speaker !== 'janet' && parts[0]?.text === text.trim()) {
-    return renderContent(text);
-  }
-  return parts.map((part, i) => (
+function renderTaggedContent(text: string): React.ReactNode {
+  return splitBySpeaker(text).map((part, i) => (
     <div key={i} className={i > 0 ? 'mt-3' : undefined}>
       <div
         className="text-xs font-mono mb-1 tracking-wider"
@@ -243,6 +239,7 @@ function JARVISBubble({
 }: {
   message: TextMessage;
 }) {
+  const tagged = hasSpeakerTags(message.content);
   return (
     <div className="flex gap-3">
       {/* JARVIS indicator */}
@@ -253,21 +250,33 @@ function JARVISBubble({
       </div>
 
       <div className="flex-1 min-w-0">
-        {/* Model label — department replies label each director instead */}
-        {message.model && !message.isStreaming && !hasSpeakerTags(message.content) && (
+        {/* Speaker label — tagged replies label each part instead */}
+        {!message.isStreaming && !tagged && (
           <div className="text-xs text-zinc-600 font-mono mb-1.5 tracking-wider">
-            JARVIS {message.model.includes('opus') ? '· DEEP' : ''}
+            {speakerLabel(message.speaker)}
+            {message.model?.includes('opus') ? ' · DEEP' : ''}
           </div>
         )}
 
         {/* Content */}
         <div className="prose prose-invert prose-sm max-w-none">
-          {renderSpeakerContent(message.content)}
+          {tagged ? renderTaggedContent(message.content) : renderContent(message.content)}
           {message.isStreaming && <StreamingCursor />}
         </div>
+
+        {/* Technical detail behind a friendly error line — never spoken */}
+        {message.errorDetail && (
+          <div className="mt-1.5 text-[11px] font-mono text-zinc-600 break-words">
+            {message.errorDetail}
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+function speakerLabel(speaker?: string): string {
+  return speaker === 'janet' ? 'JANET' : 'JARVIS';
 }
 
 // ─── Approval bubble ──────────────────────────────────────────────────────────

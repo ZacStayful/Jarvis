@@ -139,10 +139,13 @@ export async function POST(req: NextRequest) {
         }
 
         const transcript = rawMessages
-          .map(m => `${m.role === 'user' ? 'ZAC' : 'JARVIS'}: ${m.content}`)
+          .map(
+            m =>
+              `${m.role === 'user' ? 'ZAC' : m.speaker === 'janet' ? 'JANET' : 'JARVIS'}: ${m.content}`
+          )
           .join('\n\n');
 
-        const extractionPrompt = `You are JARVIS's intelligence extraction engine. Given a conversation transcript between Zac (founder of Stayful, a short-term rental property management company) and JARVIS (his AI command centre), extract structured learnings.
+        const extractionPrompt = `You are JARVIS's intelligence extraction engine. Given a conversation transcript between Zac (founder of Stayful, a short-term rental property management company) and his AI staff — JARVIS (managing director) and JANET (marketing creative director) — extract structured learnings. Keep attribution where it matters (e.g. "Janet proposed angle 7 for the next ad").
 
 TRANSCRIPT:
 ${transcript}

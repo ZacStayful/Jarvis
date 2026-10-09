@@ -1,27 +1,35 @@
 "use client";
 
 import { C } from "@/lib/jarvis-design";
-import { DIRECTORS, splitBySpeaker } from "@/lib/ads/speakers";
+import { DIRECTORS, hasSpeakerTags, splitBySpeaker } from "@/lib/ads/speakers";
 
 interface BubbleMessage {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  speaker?: "jarvis" | "janet";
 }
 
 export function Bubble({ msg }: { msg: BubbleMessage }) {
   const isUser = msg.role === "user";
-  // Assistant replies may carry [JARVIS]/[JANET] tags from the marketing
-  // department; each part gets its director's label. An untagged reply is a
-  // single JARVIS part, so it renders exactly as before.
-  const parts = isUser ? [] : splitBySpeaker(msg.content);
+  // Each assistant message carries its speaker. A marketing-department reply
+  // may additionally carry inline [JARVIS]/[JANET] tags (lib/ads/speakers.ts);
+  // those get a label per part.
   const sections = isUser
-    ? [{ label: null, colour: C.primary, text: msg.content }]
-    : (parts.length > 0 ? parts : [{ speaker: "jarvis" as const, text: "" }]).map((p) => ({
+    ? [{ label: null as string | null, colour: C.primary, text: msg.content }]
+    : hasSpeakerTags(msg.content)
+    ? splitBySpeaker(msg.content).map((p) => ({
         label: DIRECTORS[p.speaker].label,
         colour: DIRECTORS[p.speaker].colour,
         text: p.text,
-      }));
+      }))
+    : [
+        {
+          label: DIRECTORS[msg.speaker ?? "jarvis"].label,
+          colour: DIRECTORS[msg.speaker ?? "jarvis"].colour,
+          text: msg.content,
+        },
+      ];
 
   return (
     <div

@@ -38,6 +38,16 @@ export function detectSalesCommand(text: string): SalesCommand {
   return null;
 }
 
+// While the sales dashboard is open, only questions that are actually about
+// the pipeline go to the dashboard's own summary voice; everything else goes
+// to Claude (with the live metrics attached as context).
+const SALES_QUESTION_RE =
+  /\b(pipeline|leads?|conversion|convert(?:ing|ed)?|offers?|meetings?|outreach|funnel|no[- ]?shows?|abandon(?:ed|ment)?|customers?|presentations?|calls?|emails?|whatsapp|focus|priorit(?:y|ies)|metrics?|numbers?|rates?|attendance|booked|warm|cold|engaged|engagement|special offer|close rate|revenue|targets?|kpis?)\b/i;
+
+export function isSalesQuestion(text: string): boolean {
+  return SALES_QUESTION_RE.test(text);
+}
+
 export type SalesAction =
   | { kind: "focus"; chunk: ChunkId }
   | { kind: "summarise" }

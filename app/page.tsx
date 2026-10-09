@@ -18,29 +18,35 @@ import {
   VolumeX,
 } from "lucide-react";
 import { C, routeCommand, type ViewId } from "@/lib/jarvis-design";
-import { detectMarketingCommand, type ViewRoute } from "@/lib/commandRouter";
+import { detectAddressedDirector, detectMarketingCommand, type ViewRoute } from "@/lib/commandRouter";
 import { useJARVIS } from "@/hooks/useJARVIS";
 import { useCrossSessionContext } from "@/hooks/useCrossSessionContext";
-import type { JARVISState, Message } from "@/types/jarvis";
+import type { InputMode, JARVISState, Message, PersonaId } from "@/types/jarvis";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { useTTS } from "@/hooks/useTTS";
+import { useTTS, readStoredMuted } from "@/hooks/useTTS";
 import { useTranscriptPersistence } from "@/hooks/useTranscriptPersistence";
-import { hasSpeakerTags, janetVoiceId, splitBySpeaker } from "@/lib/ads/speakers";
 import { LearningSystem, isEODCommand } from "@/components/learning/LearningSystem";
 import { detectLucyCommand } from "@/lib/lucy-commands";
 import { detectPortfolioCommand } from "@/lib/portfolio/commands";
-import { detectSalesCommand } from "@/lib/sales/commands";
+import { detectSalesCommand, isSalesQuestion } from "@/lib/sales/commands";
+import { buildSalesContextLine } from "@/lib/sales/context";
+import { detectInvestmentCommand } from "@/lib/investment-commands";
 import { pick, SALES_OPEN, LOADING, SECTION_ACK, QUERY_START, FOLLOW_UP, SILENCE_PROMPT, SALES_CLOSE, PRIORITY_PREFIX } from "@/lib/sales/voice-phrases";
 import {
   isStopPhrase,
   isNoMorePhrase,
-  detectCategoryFocus,
+  isCategorySwitch,
   isNewsRequest,
   isSummariseRequest,
   categoryVoiceName,
 } from "@/lib/voice-news-intents";
 import { isPresenceCheck, presenceResponse } from "@/lib/voice-presence";
 import { isLikelyEcho } from "@/lib/voice-echo-filter";
+import { isCommandShaped } from "@/lib/intent-utils";
+import { detectPersonaSwitch } from "@/lib/persona-commands";
+import { DEFAULT_PERSONA, PERSONAS, PERSONA_IDS } from "@/lib/personas";
+import { buildGreeting, handoverLine, thinkingLine, NEWS_FEED_DOWN_LINE } from "@/lib/jarvis-lines";
+import { nextSpeakableChunks } from "@/lib/speech-chunks";
 import { LucyView } from "@/views/LucyView";
 import { SalesDashboard } from "@/components/sales/SalesDashboard";
 import { PortfolioView } from "@/components/portfolio/PortfolioView";
@@ -76,6 +82,23 @@ const SHORT_STATUS: Record<JARVISState, string> = {
   listening: "LISTENING",
 };
 
+const GREETED_KEY = "jarvis_greeted";
+const VOICE_ALWAYS_ON_KEY = "jarvis_voice_always_on";
+// How long after speech ends a final transcript is still checked for echo.
+const ECHO_TAIL_MS = 2000;
+// How long a silent "thinking" phase runs before a spoken filler.
+const THINKING_FILLER_MS = 3000;
+
+// Result of the navigation pass over an utterance.
+interface NavResult {
+  /** The message was fully handled locally — don't send it to Claude. */
+  consumed: boolean;
+  /** A view was opened by this utterance (passed to the prompt explicitly). */
+  openedView?: string;
+  /** Use the deep (Opus) model for this turn. */
+  deep?: boolean;
+}
+
 export default function JarvisPage() {
   const router = useRouter();
   const [activeView, setActiveView] = useState<ViewId | null>(null);
@@ -83,44 +106,78 @@ export default function JarvisPage() {
   const [viewParams, setViewParams] = useState<Record<string, unknown>>({});
   const [input, setInput] = useState("");
   const feedRef = useRef<HTMLDivElement | null>(null);
+  // Messages older than this (restored history) are never spoken.
+  const mountedAtRef = useRef<number>(Date.now());
 
-  // Voice output — using the working Phase 2 `/api/speak` server proxy.
-  // Phase 8's client-side ElevenLabs streaming is intentionally disabled
-  // (voiceEnabled: false on useJARVIS) — re-enable once the NEXT_PUBLIC_*
-  // ElevenLabs env vars are added in Vercel.
-  const { speak, speakSequence, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS();
+  // ── Staff: who Zac is talking to ──────────────────────────────────────────
+  // JARVIS (managing director) opens every session; Janet (marketing
+  // creative director) is brought in by name, by the header toggle, or by a
+  // hand-off from JARVIS. See lib/personas.ts.
+  const [activePersona, setActivePersona] = useState<PersonaId>(DEFAULT_PERSONA);
+  const activePersonaRef = useRef<PersonaId>(DEFAULT_PERSONA);
+  activePersonaRef.current = activePersona;
 
-  // Phase 8 — load cross-session context block to inject into the system prompt
+  // ── Voice output ──────────────────────────────────────────────────────────
+  const lastSpeechEndedAtRef = useRef(0);
+  const greetingPendingRef = useRef(false);
+  const greetingBlockedRef = useRef(false);
+  const { speak, enqueue, stop: stopSpeaking, isSpeaking, currentText: spokenText, muted, toggleMuted } = useTTS({
+    onEnd: () => {
+      lastSpeechEndedAtRef.current = Date.now();
+      if (greetingPendingRef.current) {
+        // The only reliable "it actually played" signal — see CLAUDE.md.
+        greetingPendingRef.current = false;
+        greetingBlockedRef.current = false;
+        try {
+          window.sessionStorage.setItem(GREETED_KEY, "true");
+        } catch {}
+      }
+    },
+    onError: (err) => {
+      lastSpeechEndedAtRef.current = Date.now();
+      if (greetingPendingRef.current && err === "Audio playback blocked") {
+        greetingBlockedRef.current = true; // re-armed on the first gesture
+      }
+    },
+  });
+  const isSpeakingRef = useRef(false);
+  isSpeakingRef.current = isSpeaking;
+  const mutedRef = useRef(false);
+  mutedRef.current = muted;
+
+  // ── Cross-session memory block for the system prompt ──────────────────────
   const crossSession = useCrossSessionContext();
   const crossSessionBlock = crossSession.buildContextBlock();
 
   const {
     messages,
-    jarvisState,
     isLoading,
+    currentResponse,
     sendMessage,
     approveAction,
     denyAction,
     endSession,
+    interrupt,
+    addLocalAssistantMessage,
   } = useJARVIS({
-    onRoute: (view, params) => {
-      setRoutedView(view);
-      if (params) setViewParams(params);
-    },
+    onSpeakerChange: (p) => setActivePersona(p),
     crossSessionContext: crossSessionBlock,
-    activeView: routedView,
-    // Disable Phase 8 client-streaming voice — we use the server proxy below
-    voiceEnabled: false,
     persistSession: true,
   });
+  const isLoadingRef = useRef(false);
+  isLoadingRef.current = isLoading;
+  const currentResponseRef = useRef("");
+  currentResponseRef.current = currentResponse;
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
 
-  // Phase 6 — persist transcripts to localStorage on every message update
+  // Persist transcripts to localStorage on every message update
   useTranscriptPersistence(messages);
 
-  // Phase 6 — end-of-day learning panel overlay
+  // End-of-day learning panel overlay
   const [learningOpen, setLearningOpen] = useState(false);
 
-  // Phase 7 — Lucy intelligence centre
+  // Lucy intelligence centre
   const [lucyOpen, setLucyOpen] = useState(false);
 
   // Portfolio Intelligence Dashboard (mounted inline inside the JARVIS shell)
@@ -136,11 +193,13 @@ export default function JarvisPage() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const loadingPhraseIndex = useRef(0);
 
+  // Sales, news and the dashboards are JARVIS's remit — their canned lines
+  // are always in his voice.
   const startLoadingMessages = useCallback(() => {
     loadingPhraseIndex.current = 0;
     let count = 0;
     const fire = () => {
-      speak(pick(LOADING));
+      speak(pick(LOADING), "jarvis");
       count++;
       const next = count < 3 ? 3000 : 5000;
       loadingIntervalRef.current = setTimeout(fire, next);
@@ -157,7 +216,7 @@ export default function JarvisPage() {
 
   // Centralised "switch view" helper — every nav intent must clear its
   // siblings first, otherwise the render precedence makes the first-opened
-  // view sticky (see app/page.tsx:306–323 ternary chain).
+  // view sticky (see the ternary chain in the render tree).
   const clearAllViews = useCallback(() => {
     setActiveView(null);
     setRoutedView(null);
@@ -178,7 +237,7 @@ export default function JarvisPage() {
   const handleSalesVoiceQuery = useCallback(async (text: string) => {
     if (!salesMetrics) return;
     stopSpeaking();
-    speak(pick(QUERY_START));
+    speak(pick(QUERY_START), "jarvis");
     startLoadingMessages();
     try {
       const res = await fetch('/api/sales/summary', {
@@ -190,25 +249,23 @@ export default function JarvisPage() {
       stopLoadingMessages();
       if (data.summary) {
         setSalesAnswer(data.summary);
-        if (!muted) {
-          speak(data.summary);
+        if (!mutedRef.current) {
+          speak(data.summary, "jarvis");
           // After speaking, offer a follow-up
           if (data.followUp) {
-            setTimeout(() => {
-              if (!muted) speak(pick(FOLLOW_UP));
-            }, data.summary.length * 60 + 2000);
+            enqueue(pick(FOLLOW_UP), "jarvis");
           }
         }
       }
     } catch {
       stopLoadingMessages();
-      speak("I encountered an error, sir. Please try again.");
+      speak("I encountered an error, sir. Please try again.", "jarvis");
     }
-  }, [salesMetrics, muted, speak, stopSpeaking, startLoadingMessages, stopLoadingMessages]);
+  }, [salesMetrics, speak, enqueue, stopSpeaking, startLoadingMessages, stopLoadingMessages]);
 
   const handleSectionFocus = useCallback(async (sectionId: string, metrics: any) => {
     stopSpeaking();
-    speak(pick(SECTION_ACK[sectionId] || SECTION_ACK.funnel));
+    speak(pick(SECTION_ACK[sectionId] || SECTION_ACK.funnel), "jarvis");
     // Generate proactive contextual observation
     try {
       const res = await fetch('/api/sales/summary', {
@@ -217,22 +274,31 @@ export default function JarvisPage() {
         body: JSON.stringify({ metrics, sectionId }),
       });
       const data = await res.json();
-      if (data.summary && !muted) {
-        setTimeout(() => speak(data.summary), 2500);
+      if (data.summary && !mutedRef.current) {
+        enqueue(data.summary, "jarvis");
       }
     } catch {}
-  }, [muted, speak, stopSpeaking]);
+  }, [speak, enqueue, stopSpeaking]);
 
-  // Track which message ids have already been spoken
+  // ── Speech bookkeeping ────────────────────────────────────────────────────
+  // Which message ids have been fully spoken (or must never be spoken).
   const spokenIdsRef = useRef<Set<string>>(new Set());
+  // Streaming cursor per message id: how much of its text is already queued.
+  const spokenUpToRef = useRef<Map<string, number>>(new Map());
+  // A message whose remaining speech Zac cut off by talking over it.
+  const cancelledSpeechRef = useRef<string | null>(null);
 
-  // When applyNavIntents speaks an ack, we suppress the next assistant
-  // message's auto-TTS so ack + Claude's chat reply don't overlap.
-  const skipNextAssistantSpeechRef = useRef(false);
+  // Add a UI-only line to the feed and say it, in one go.
+  const say = useCallback(
+    (text: string, speaker: PersonaId) => {
+      const id = addLocalAssistantMessage(text, speaker);
+      spokenIdsRef.current.add(id);
+      speak(text, speaker);
+    },
+    [addLocalAssistantMessage, speak]
+  );
 
   // News-conversation state: cached articles + controlled UI filter.
-  // Populated when the briefing finishes loading (onComplete), used by
-  // handleNewsConversation to drive topic-focus and category filtering.
   const loadedArticlesRef = useRef<unknown[] | null>(null);
   const [newsActiveCategory, setNewsActiveCategory] = useState<string | undefined>(undefined);
 
@@ -244,58 +310,122 @@ export default function JarvisPage() {
   // interpreted as a category selection.
   const awaitingNewsCategoryRef = useRef(false);
 
-  // Speak newly completed assistant messages via /api/speak (ElevenLabs proxy)
+  // ── Speak replies as they stream ──────────────────────────────────────────
+  // Every assistant message that hasn't been spoken yet is fed to the TTS
+  // queue sentence by sentence while it streams, then flushed when it
+  // finishes. A hand-off produces two messages back to back, each spoken in
+  // its own voice. Restored history (older than mount) is never spoken.
   useEffect(() => {
     if (muted) return;
-    const latest = messages[messages.length - 1];
-    if (
-      latest &&
-      latest.role === "assistant" &&
-      !latest.isStreaming &&
-      latest.content.trim() &&
-      !spokenIdsRef.current.has(latest.id)
-    ) {
-      spokenIdsRef.current.add(latest.id);
-      if (skipNextAssistantSpeechRef.current) {
-        skipNextAssistantSpeechRef.current = false;
-        return;
+    for (const m of messages) {
+      if (m.role !== "assistant") continue;
+      if (spokenIdsRef.current.has(m.id)) continue;
+      if (m.timestamp.getTime() < mountedAtRef.current) {
+        spokenIdsRef.current.add(m.id);
+        continue;
       }
-      if (!hasSpeakerTags(latest.content)) {
-        speak(latest.content);
-        return;
+      if (cancelledSpeechRef.current === m.id) {
+        if (!m.isStreaming) spokenIdsRef.current.add(m.id);
+        continue;
       }
-      // Marketing department reply: speak each director's part in their own
-      // voice — Janet's ElevenLabs voice if set, otherwise Jarvis's.
-      speakSequence(
-        splitBySpeaker(latest.content).map((part) => ({
-          text: part.text,
-          voiceId: part.speaker === "janet" ? janetVoiceId() : undefined,
-        }))
-      );
-    }
-  }, [messages, muted, speak, speakSequence]);
+      const speaker = m.speaker ?? DEFAULT_PERSONA;
 
-  // Auto-greet on first mount (after login). Uses sessionStorage so a hard
-  // refresh inside the same tab doesn't keep replaying the welcome.
-  const greetedRef = useRef(false);
+      if (m.local) {
+        // Greeting / handover lines were spoken by whoever added them.
+        // Error notices arrive here and are spoken now, as an interrupt.
+        spokenIdsRef.current.add(m.id);
+        if (m.type === "text" && m.errorDetail) speak(m.content, speaker);
+        continue;
+      }
+
+      const upTo = spokenUpToRef.current.get(m.id) ?? 0;
+      if (m.isStreaming) {
+        const { chunks, upTo: next } = nextSpeakableChunks(m.content, upTo, { first: upTo === 0 });
+        if (chunks.length) {
+          for (const chunk of chunks) enqueue(chunk, speaker);
+          spokenUpToRef.current.set(m.id, next);
+        }
+      } else {
+        const { chunks } = nextSpeakableChunks(m.content, upTo, { first: upTo === 0, final: true });
+        for (const chunk of chunks) enqueue(chunk, speaker);
+        spokenIdsRef.current.add(m.id);
+        spokenUpToRef.current.delete(m.id);
+      }
+    }
+  }, [messages, muted, enqueue, speak]);
+
+  // ── Thinking filler ───────────────────────────────────────────────────────
+  // If a reply hasn't started arriving after a few seconds, say so briefly.
+  // The first streamed sentence is queued after the filler, not over it.
   useEffect(() => {
-    if (greetedRef.current) return;
-    if (typeof window === "undefined") return;
-    if (window.sessionStorage.getItem("jarvis_greeted") === "true") {
-      greetedRef.current = true;
-      return;
-    }
-    greetedRef.current = true;
-    window.sessionStorage.setItem("jarvis_greeted", "true");
-    if (!muted) {
-      speak("Welcome back, Zac. Systems are online. How may I assist?");
-    }
-  }, [muted, speak]);
+    if (!isLoading) return;
+    const t = setTimeout(() => {
+      if (
+        isLoadingRef.current &&
+        currentResponseRef.current === "" &&
+        !isSpeakingRef.current &&
+        !mutedRef.current
+      ) {
+        speak(thinkingLine(activePersonaRef.current), activePersonaRef.current);
+      }
+    }, THINKING_FILLER_MS);
+    return () => clearTimeout(t);
+  }, [isLoading, speak]);
 
-  // Phase 8 — Escape key stops in-flight voice playback
+  // ── Greeting on open ──────────────────────────────────────────────────────
+  // Instant and local (no Claude round-trip): JARVIS's time-of-day line goes
+  // into the feed on every mount; it is spoken once per tab session, and the
+  // "spoken" flag is only set when playback actually finished (onEnd). If
+  // autoplay is blocked, the first keypress or tap plays it.
+  const greetingAddedRef = useRef(false);
+  const greetingTextRef = useRef("");
+  useEffect(() => {
+    if (!greetingAddedRef.current) {
+      greetingAddedRef.current = true;
+      greetingTextRef.current = buildGreeting(DEFAULT_PERSONA);
+      const id = addLocalAssistantMessage(greetingTextRef.current, DEFAULT_PERSONA);
+      spokenIdsRef.current.add(id);
+    }
+    if (typeof window === "undefined") return;
+    try {
+      if (window.sessionStorage.getItem(GREETED_KEY) === "true") return;
+    } catch {}
+    if (readStoredMuted()) return;
+
+    const line = greetingTextRef.current;
+    greetingPendingRef.current = true;
+    let gestureUsed = false;
+
+    const onGesture = () => {
+      if (gestureUsed || !greetingPendingRef.current || !greetingBlockedRef.current) return;
+      gestureUsed = true;
+      window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("pointerdown", onGesture);
+      greetingBlockedRef.current = false;
+      speak(line, DEFAULT_PERSONA);
+    };
+
+    const t = window.setTimeout(() => {
+      if (greetingPendingRef.current && !gestureUsed) speak(line, DEFAULT_PERSONA);
+    }, 600);
+
+    window.addEventListener("keydown", onGesture);
+    window.addEventListener("pointerdown", onGesture);
+
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("pointerdown", onGesture);
+    };
+  }, [addLocalAssistantMessage, speak]);
+
+  // Escape stops in-flight voice playback (the reply keeps arriving as text)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") stopSpeaking();
+      if (e.key !== "Escape") return;
+      stopSpeaking();
+      const streaming = messagesRef.current.find((m) => m.isStreaming);
+      if (streaming) cancelledSpeechRef.current = streaming.id;
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -310,7 +440,7 @@ export default function JarvisPage() {
     const reset = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
-        if (!isSpeaking && !muted) speak(pick(SILENCE_PROMPT));
+        if (!isSpeakingRef.current && !mutedRef.current) speak(pick(SILENCE_PROMPT), "jarvis");
       }, 30000);
     };
     reset();
@@ -319,7 +449,7 @@ export default function JarvisPage() {
       window.removeEventListener('click', reset);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
-  }, [salesOpen, isSpeaking, muted, speak]);
+  }, [salesOpen, speak]);
 
   // Sales: auto-briefing when dashboard opens AND metrics load
   useEffect(() => {
@@ -330,7 +460,7 @@ export default function JarvisPage() {
         // Check for priority alerts first
         const urgentOffers = salesMetrics.offers?.expiringThisWeek > 0;
         if (urgentOffers) {
-          speak(pick(PRIORITY_PREFIX) + " " + salesMetrics.offers.expiringThisWeek + " offer" + (salesMetrics.offers.expiringThisWeek > 1 ? "s" : "") + " expiring this week.");
+          speak(pick(PRIORITY_PREFIX) + " " + salesMetrics.offers.expiringThisWeek + " offer" + (salesMetrics.offers.expiringThisWeek > 1 ? "s" : "") + " expiring this week.", "jarvis");
         }
         const res = await fetch('/api/sales/summary', {
           method: 'POST',
@@ -338,96 +468,87 @@ export default function JarvisPage() {
           body: JSON.stringify({ metrics: salesMetrics }),
         });
         const data = await res.json();
-        if (data.summary) {
-          const delay = urgentOffers ? 4000 : 0;
-          setTimeout(() => { if (!muted) speak(data.summary); }, delay);
+        if (data.summary && !mutedRef.current) {
+          if (urgentOffers) enqueue(data.summary, "jarvis");
+          else speak(data.summary, "jarvis");
         }
       } catch {}
     }, 1500);
     return () => clearTimeout(timer);
-  }, [salesOpen, salesMetrics, muted, speak, stopLoadingMessages]);
+  }, [salesOpen, salesMetrics, muted, speak, enqueue, stopLoadingMessages]);
 
-  // Phase 8 — summarise session on tab close (best-effort, non-blocking)
+  // Summarise the session into cross-session memory when the tab is hidden
+  // or closed. `beforeunload` fetches are routinely killed by the browser;
+  // visibilitychange + pagehide with a keepalive request is what survives.
   useEffect(() => {
-    const handler = () => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") endSession().catch(() => {});
+    };
+    const onPageHide = () => {
       endSession().catch(() => {});
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [endSession]);
 
-  // Always-on voice — persisted in localStorage, default on
+  // ── Voice input ───────────────────────────────────────────────────────────
+  // Always-on voice on desktop (persisted). On touch devices continuous
+  // recognition is unreliable and autoplay is strict, so the default there
+  // is tap-to-talk.
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [voiceAlwaysOn, setVoiceAlwaysOn] = useState(true);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("jarvis_voice_always_on");
-    if (stored !== null) setVoiceAlwaysOn(stored === "true");
+    const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    setIsTouchDevice(touch);
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(VOICE_ALWAYS_ON_KEY);
+    } catch {}
+    setVoiceAlwaysOn(stored !== null ? stored === "true" : !touch);
   }, []);
   const toggleVoiceAlwaysOn = () => {
     const next = !voiceAlwaysOn;
     setVoiceAlwaysOn(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("jarvis_voice_always_on", String(next));
-    }
+    try {
+      window.localStorage.setItem(VOICE_ALWAYS_ON_KEY, String(next));
+    } catch {}
   };
 
   const { startListening, stopListening, isListening, partialTranscript } = useVoiceInput({
     onFinalTranscript: (text) => {
-      // Echo filter ONLY runs while JARVIS is actively speaking. Once
-      // JARVIS has stopped, the user's response is the real signal —
-      // even if it shares words with the question JARVIS just asked
-      // (e.g., answering "political news" to "what type of news?").
-      // Without this gate, legitimate responses were being silently
-      // dropped because they contained category words JARVIS had just
-      // listed.
-      if (isSpeaking && isLikelyEcho(text, spokenText)) {
-        if (voiceAlwaysOn) {
-          setTimeout(() => {
-            startListening().catch(() => {});
-          }, 600);
-        }
-        return;
-      }
-      stopSpeaking();
-      if (
-        !handlePresenceCheck(text) &&
-        !handleMarketingRequest(text) &&
-        !handleNewsRequest(text) &&
-        !handleNewsConversation(text)
-      ) {
-        applyNavIntents(text);
-        sendMessage(text);
-      }
-      // Re-arm listening after the silence-triggered stop, if always-on
-      if (voiceAlwaysOn) {
-        setTimeout(() => {
-          startListening().catch(() => {});
-        }, 600);
-      }
+      // Echo filter: while JARVIS is speaking (and for a moment after), a
+      // transcript that matches what he just said is his own voice coming
+      // back through the mic. Once that window has passed, accept everything
+      // — a real answer that shares words with the question must get through
+      // (the "political news" case; see CLAUDE.md).
+      const recentlySpoke =
+        isSpeakingRef.current || Date.now() - lastSpeechEndedAtRef.current < ECHO_TAIL_MS;
+      if (recentlySpoke && isLikelyEcho(text, spokenText)) return;
+      handleUtterance(text, "voice");
     },
   });
 
-  // Barge-in: stop in-flight JARVIS speech the moment the recogniser
-  // detects the user has started talking. partialTranscript fires in
-  // real-time as the Web Speech API emits interim results — much
-  // earlier than onFinalTranscript (which waits 1.5s of silence).
-  //
-  // The echo filter compares the partial against the text JARVIS is
-  // currently speaking (exposed via useTTS.currentText). If the partial
-  // looks like our own voice picked up via the mic, we ignore it —
-  // otherwise JARVIS would self-interrupt the moment its own audio
-  // bled back through the speakers.
+  // Barge-in: stop in-flight speech the moment the recogniser hears Zac
+  // start talking. partialTranscript fires as interim results arrive — much
+  // earlier than onFinalTranscript (which waits for silence). The echo
+  // filter discards partials that are our own voice via mic bleed-through.
   useEffect(() => {
     if (!isSpeaking) return;
     const partial = partialTranscript.trim();
     if (partial.length === 0) return;
     if (isLikelyEcho(partial, spokenText)) return;
     stopSpeaking();
+    const streaming = messagesRef.current.find((m) => m.isStreaming);
+    if (streaming) cancelledSpeechRef.current = streaming.id;
   }, [partialTranscript, isSpeaking, stopSpeaking, spokenText]);
 
   // Fetch a Claude-written voice summary of the briefing (or a category
-  // subset) and speak it. Used by the briefing's onComplete and by the
-  // news-conversation handler when the user asks to focus on a topic.
+  // subset) and speak it.
   const fetchAndSpeakNewsSummary = useCallback(
     async (articles: unknown[], category: string | null) => {
       try {
@@ -436,63 +557,73 @@ export default function JarvisPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ articles, category }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!mutedRef.current) speak(NEWS_FEED_DOWN_LINE, "jarvis");
+          return;
+        }
         const { summary } = (await res.json()) as { summary: string };
-        if (summary && !muted) speak(summary);
+        if (summary && !mutedRef.current) speak(summary, "jarvis");
       } catch {
-        // best-effort — silent on failure
+        if (!mutedRef.current) speak(NEWS_FEED_DOWN_LINE, "jarvis");
       }
     },
-    [muted, speak]
+    [speak]
   );
 
-  // Presence check — "are you there?", "Jarvis?", "can you hear me?".
-  // Local intercept so JARVIS replies instantly instead of waiting for
-  // a Claude round-trip. Returns true if handled.
-  const handlePresenceCheck = (text: string): boolean => {
-    if (!isPresenceCheck(text)) return false;
-    if (!muted) speak(presenceResponse());
-    return true;
-  };
+  // ── Staff switching ───────────────────────────────────────────────────────
+  const switchPersona = useCallback(
+    (next: PersonaId, announce = true) => {
+      if (next === activePersonaRef.current) return;
+      setActivePersona(next);
+      activePersonaRef.current = next;
+      if (announce && !mutedRef.current) say(handoverLine(next), next);
+      else if (announce) addLocalAssistantMessage(handoverLine(next), next);
+    },
+    [say, addLocalAssistantMessage]
+  );
 
-  // Marketing department — "how are the ads doing?", "Janet, …", "department
-  // briefing". Runs before the news handler because "briefing" would
-  // otherwise be read as a news request. Opens the view locally and sends
-  // the message on to Claude, which answers as Jarvis and/or Janet. No local
-  // ack: muzzling the next assistant reply would silence the directors.
-  const handleMarketingRequest = (text: string): boolean => {
-    if (!detectMarketingCommand(text)) return false;
+  // Marketing department — "how are the ads doing?", "which ads are
+  // weakening?", "department briefing". Runs before the news handler because
+  // "briefing" would otherwise be read as a news request. Opens the
+  // department view (read-only stayful-ads data beside the chat) and routes
+  // the question to Janet unless JARVIS was named: the ads are her remit,
+  // the budget and scaling decision his, and either hands over as needed.
+  const handleMarketingRequest = (
+    text: string,
+    persona: PersonaId
+  ): { persona: PersonaId; justOpened: boolean } | null => {
+    if (!detectMarketingCommand(text)) return null;
+    const addressed = detectAddressedDirector(text);
+    const who: PersonaId = addressed === "jarvis" ? "jarvis" : addressed === "janet" ? "janet" : persona === "jarvis" ? "janet" : persona;
+    let justOpened = false;
     if (routedView !== "marketing-department") {
       clearAllViews();
       setRoutedView("marketing-department");
-      // Instant acknowledgement while the directors' reply is written. Not
-      // muzzled: the reply is still spoken, and cuts this off if it's ready
-      // first.
-      if (!muted) speak("Opening the marketing department.");
+      justOpened = true;
     }
-    sendMessage(text);
-    return true;
+    if (who !== persona) switchPersona(who, false);
+    if (justOpened && !muted) {
+      speak(who === "janet" ? "Pulling up the department, Zac." : "Opening the marketing department, sir.", who);
+    }
+    return { persona: who, justOpened };
   };
 
   // Intercept transcripts while the news briefing view is mounted.
-  // Handles stop/no-more interruptions during summary playback. Topic
-  // switching is handled by handleNewsRequest below (it re-fetches just
-  // the chosen category instead of filtering the loaded set).
+  // Handles stop/no-more interruptions during summary playback.
   const handleNewsConversation = (text: string): boolean => {
     if (routedView !== "news-briefing") return false;
 
-    const lower = text.toLowerCase().trim();
-
     // "nothing" / "no more" — close view, hand back to dashboard
-    if (isNoMorePhrase(lower)) {
+    if (isNoMorePhrase(text)) {
       clearAllViews();
-      if (!muted) speak("Awaiting further commands, sir.");
+      if (!muted) speak("Awaiting further commands, sir.", "jarvis");
       return true;
     }
 
-    // "stop" / "wait" / "pause" — ack and wait for follow-up
-    if (isStopPhrase(lower)) {
-      if (!muted) speak("Stopped, sir. What else would you like to cover?");
+    // "stop" / "wait" — ack and wait for follow-up
+    if (isStopPhrase(text)) {
+      stopSpeaking();
+      if (!muted) speak("Stopped, sir. What else would you like to cover?", "jarvis");
       return true;
     }
 
@@ -503,28 +634,27 @@ export default function JarvisPage() {
   // are resolved locally (briefing opens instantly, only the requested
   // category is fetched, no Claude round-trip needed for routing).
   //
-  // Three trigger cases:
-  //   1. Explicit news intent + category in same utterance ("AI news",
-  //      "take me to political news") → open briefing filtered to it.
+  //   1. Explicit news intent + category ("AI news", "take me to political
+  //      news") → open briefing filtered to it.
   //   2. Explicit news intent without category ("open the briefing") →
   //      ask "what type?" and arm awaitingNewsCategoryRef.
   //   3. Awaiting-category mode and a category is named → load it.
-  //   4. Briefing already open + category named → switch and refetch.
+  //   4. Briefing already open + a category *switch* ("switch to AI news",
+  //      "property", "what about rates") → switch and refetch. A sentence
+  //      that merely contains a category word ("what does this mean for our
+  //      business?") goes to Claude.
   const handleNewsRequest = (text: string): boolean => {
-    const lower = text.toLowerCase().trim();
-    const hasNewsIntent = isNewsRequest(lower);
-    const hasSummariseIntent = isSummariseRequest(lower);
-    const category = detectCategoryFocus(lower);
+    const hasNewsIntent = isNewsRequest(text);
+    const hasSummariseIntent = isSummariseRequest(text);
     const briefingOpen = routedView === "news-briefing";
     const awaiting = awaitingNewsCategoryRef.current;
+    const category = isCategorySwitch(text, awaiting || hasNewsIntent);
 
     // Clear awaiting state on ANY input so we don't get stuck in it
     if (awaiting) awaitingNewsCategoryRef.current = false;
 
     // SUMMARISE while briefing is already open — re-speak a summary of
     // whatever's currently on screen instead of asking "what type?".
-    // If a *different* category is named, fall through to the switch
-    // branch below (which will refetch and onComplete will narrate it).
     if (
       briefingOpen &&
       hasSummariseIntent &&
@@ -534,12 +664,12 @@ export default function JarvisPage() {
       if (articles && articles.length > 0) {
         fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
       } else if (!muted) {
-        speak("One moment, sir — still pulling the feeds.");
+        speak("One moment, sir — still pulling the feeds.", "jarvis");
       }
       return true;
     }
 
-    // Cases 1, 3, 4 — a category is named in a news context
+    // Cases 1, 3, 4 — a category switch in a news context
     if (category && (hasNewsIntent || awaiting || briefingOpen)) {
       if (!briefingOpen) {
         clearAllViews();
@@ -547,129 +677,226 @@ export default function JarvisPage() {
       setNewsCategoriesFilter([category]);
       setNewsActiveCategory(category);
       setRoutedView("news-briefing");
-      if (!muted) speak(`Pulling up the latest ${categoryVoiceName(category)}, sir.`);
+      switchPersona("jarvis", false);
+      if (!muted) speak(`Pulling up the latest ${categoryVoiceName(category)}, sir.`, "jarvis");
       return true;
     }
 
     // Case 2 — news intent, no category → ask which one
     if (hasNewsIntent) {
       awaitingNewsCategoryRef.current = true;
+      switchPersona("jarvis", false);
       if (!muted) {
         speak(
-          "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?"
+          "What type of news would you like, sir? AI, political, regulatory, rates, property, competition, international, or UK business?",
+          "jarvis"
         );
       }
       return true;
     }
 
-    // Awaiting was true but user said something unrelated — fall through
     return false;
+  };
+
+  // Which view the prompt should be told about right now.
+  const currentViewId = (): string | undefined => {
+    if (portfolioOpen) return "portfolio-dashboard";
+    if (salesOpen) return "sales-dashboard";
+    if (lucyOpen) return "lucy-intelligence-centre";
+    if (routedView) return routedView;
+    if (activeView) return activeView;
+    return undefined;
   };
 
   // Shared nav-intent handler used by both voice and text paths. Detect
   // every possible intent, clear competing views once, then set the winner.
-  // Priority: portfolio > lucy > clientside route. EOD is an overlay and
-  // doesn't disturb the underlying view.
-  const applyNavIntents = (text: string) => {
+  // Priority: sales > portfolio > lucy > investment dashboard > legacy pane.
+  // EOD is an overlay and doesn't disturb the underlying view.
+  const applyNavIntents = (text: string): NavResult => {
     if (isEODCommand(text)) setLearningOpen(true);
 
-    // Sales view with voice acknowledgement
-    if (salesOpen && /\b(close|back|home|exit)\b/i.test(text)) {
-      stopSpeaking();
-      speak(pick(SALES_CLOSE));
-      clearAllViews();
-      return;
-    }
-
-    if (salesOpen && /\b(what.*focus|today|priorities|focus today)\b/i.test(text)) {
-      handleSalesVoiceQuery(text);
-      return;
-    }
-
-    if (salesOpen && !/\b(news|lucy|portfolio|leads|tasks|command|investments)\b/i.test(text)) {
-      handleSalesVoiceQuery(text);
-      return;
+    // Sales view: close / sales questions / everything else to Claude
+    if (salesOpen) {
+      if (isCommandShaped(text) && /\b(close|back|home|exit)\b/i.test(text)) {
+        stopSpeaking();
+        speak(pick(SALES_CLOSE), "jarvis");
+        clearAllViews();
+        return { consumed: true };
+      }
+      const navWord = /\b(news|lucy|portfolio|leads|tasks|command|investments?)\b/i.test(text);
+      if (!navWord && salesMetrics && isSalesQuestion(text)) {
+        handleSalesVoiceQuery(text);
+        return { consumed: true };
+      }
+      // Otherwise fall through: a nav command, or a general question that
+      // goes to Claude with the live metrics attached.
     }
 
     const sales = detectSalesCommand(text);
     if (sales === 'navigate') {
       clearAllViews();
       stopSpeaking();
-      speak(pick(SALES_OPEN));
+      switchPersona("jarvis", false);
+      speak(pick(SALES_OPEN), "jarvis");
       setSalesOpen(true);
       startLoadingMessages();
-      return;
+      return { consumed: true }; // the dashboard narrates itself
     }
+
     const lucy = detectLucyCommand(text);
     const portfolio = detectPortfolioCommand(text);
-    const route = routeCommand(text);
+    const investment = !portfolio ? detectInvestmentCommand(text) : null;
+    const route = !portfolio && !investment ? routeCommand(text) : null;
 
-    if (!lucy && !portfolio && !route) return;
+    if (lucy !== 'navigate' && !portfolio && !investment && !route) {
+      return { consumed: false };
+    }
 
     clearAllViews();
 
     let ack: string | null = null;
+    let openedView: string | undefined;
+    let deep = false;
     if (portfolio) {
       setPortfolioOpen(true);
       ack = "Opening portfolio dashboard, sir.";
-    } else if (lucy) {
+      openedView = "portfolio-dashboard";
+    } else if (lucy === 'navigate') {
       setLucyOpen(true);
       ack = "Opening Lucy intelligence centre.";
+      openedView = "lucy-intelligence-centre";
+    } else if (investment) {
+      setRoutedView("investment-dashboard");
+      setViewParams({ query: investment.query });
+      ack = "Opening the investment dashboard.";
+      openedView = "investment-dashboard";
+      deep = true;
     } else if (route) {
       setActiveView(route);
-      const lower = text.toLowerCase();
-      // News is handled by handleNewsRequest BEFORE this runs — skip it here
-      if (route === "news") {
-        // shouldn't happen in practice, but be safe
-      } else if (lower.includes("invest") || lower.includes("stock")) {
-        ack = "Opening investment dashboard.";
-      } else if (lower.includes("task") || lower.includes("todo")) {
-        ack = "Opening task centre.";
-      } else if (
-        lower.includes("lead") ||
-        lower.includes("pipeline") ||
-        lower.includes("sales")
-      ) {
-        ack = "Opening lead pipeline.";
-      } else if (lower.includes("command") || lower.includes("overview")) {
-        ack = "Opening command centre.";
-      }
+      openedView = route;
+      ack =
+        route === "tasks" ? "Opening task centre." :
+        route === "command" ? "Opening command centre." :
+        route === "intelligence" ? "Opening the intelligence view." :
+        route === "log" ? "Opening the conversation log." :
+        null;
     }
 
-    // Suppress the next assistant auto-speech so the ack + (briefing summary)
-    // don't overlap with Claude's chat reply.
+    // These are all JARVIS's dashboards. The ack is instant; Claude's reply
+    // is queued after it rather than muted (see the streaming effect).
+    if (openedView) switchPersona("jarvis", false);
     if (ack && !muted) {
-      skipNextAssistantSpeechRef.current = true;
-      speak(ack);
+      stopSpeaking();
+      speak(ack, "jarvis");
     }
+    return { consumed: false, openedView, deep };
   };
 
-  // Combined visual state
-  const state: JARVISState = isListening
-    ? "listening"
-    : isSpeaking
-    ? "speaking"
-    : jarvisState;
+  // ── The one chain every utterance goes through (voice and typed) ──────────
+  //
+  //   talk-over (stop speech, abort an in-flight reply)
+  //     ↓
+  //   persona switch / address ("switch to Janet", "Janet, …")
+  //     ↓
+  //   presence check ("are you there?")           → instant local line
+  //     ↓
+  //   marketing request ("how are the ads doing?") → department view + Janet/JARVIS
+  //     ↓
+  //   news request / news conversation           → local news flow
+  //     ↓
+  //   nav intents (sales, portfolio, lucy, investments, panes)
+  //     ↓
+  //   sendMessage → Claude, as whoever is active, with the view context
+  const handleUtterance = (text: string, inputMode: InputMode) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
-  // Always-on voice: auto-start on mount and restart whenever JARVIS stops
-  // speaking. Pause during JARVIS's own speech so the mic doesn't pick up
-  // and transcribe its replies (feedback loop).
+    // Talk-over: whatever is playing stops, and a reply still streaming is
+    // cut short so the new message is answered instead.
+    stopSpeaking();
+    const streaming = messagesRef.current.find((m) => m.isStreaming);
+    if (streaming) cancelledSpeechRef.current = streaming.id;
+    if (isLoadingRef.current) interrupt();
+
+    // Who is being spoken to?
+    let persona = activePersonaRef.current;
+    let message = trimmed;
+    const sw = detectPersonaSwitch(trimmed, persona);
+    if (sw) {
+      switchPersona(sw.persona, true);
+      persona = sw.persona;
+      if (!sw.remainder) return; // bare switch — the handover line is the reply
+      message = sw.remainder;
+    }
+
+    if (isPresenceCheck(message)) {
+      say(presenceResponse(persona), persona);
+      return;
+    }
+
+    const marketing = handleMarketingRequest(message, persona);
+    if (marketing) {
+      sendMessage(message, false, {
+        inputMode,
+        persona: marketing.persona,
+        activeView: "marketing-department",
+        viewJustOpened: marketing.justOpened,
+      });
+      return;
+    }
+
+    if (handleNewsRequest(message)) return;
+    if (handleNewsConversation(message)) return;
+
+    const nav = applyNavIntents(message);
+    if (nav.consumed) return;
+
+    // A dashboard open was always JARVIS's doing.
+    if (nav.openedView) persona = "jarvis";
+
+    const viewNow = nav.openedView ?? currentViewId();
+    const viewContext =
+      viewNow === "sales-dashboard" ? buildSalesContextLine(salesMetrics) : undefined;
+
+    sendMessage(message, nav.deep ?? false, {
+      inputMode,
+      persona,
+      activeView: viewNow,
+      viewJustOpened: !!nav.openedView,
+      viewContext,
+    });
+  };
+
+  // Combined visual state: speaking > thinking > listening > idle.
+  const state: JARVISState = isSpeaking
+    ? "speaking"
+    : isLoading
+    ? "thinking"
+    : isListening
+    ? "listening"
+    : "idle";
+
+  // Mic policy. The mic is off only while JARVIS is *thinking* (a reply
+  // requested but nothing spoken yet) — otherwise what Zac said would be
+  // dropped by the in-flight guard. It stays live while he speaks so Zac can
+  // talk over him; the echo filter above handles his own voice.
+  const isThinking = isLoading && !isSpeaking;
   useEffect(() => {
     if (!voiceAlwaysOn) {
       if (isListening) stopListening();
       return;
     }
-    if (isSpeaking) {
+    if (isThinking) {
       if (isListening) stopListening();
       return;
     }
-    if (!isListening && !isLoading) {
+    if (!isListening) {
       const t = setTimeout(() => {
         startListening().catch(() => {});
       }, 400);
       return () => clearTimeout(t);
     }
-  }, [voiceAlwaysOn, isSpeaking, isListening, isLoading, startListening, stopListening]);
+  }, [voiceAlwaysOn, isThinking, isListening, startListening, stopListening]);
 
   // Auto-scroll message feed
   useEffect(() => {
@@ -678,15 +905,23 @@ export default function JarvisPage() {
 
   const handleSend = () => {
     const txt = input.trim();
-    if (!txt || isLoading) return;
+    if (!txt) return;
+    if (isThinking) return; // typed input is disabled while thinking anyway
     setInput("");
-    stopSpeaking();
-    if (handlePresenceCheck(txt)) return;
-    if (handleMarketingRequest(txt)) return;
-    if (handleNewsRequest(txt)) return;
-    if (handleNewsConversation(txt)) return;
-    applyNavIntents(txt);
-    sendMessage(txt);
+    handleUtterance(txt, "text");
+  };
+
+  // Tap-to-talk (touch devices with always-on off): one utterance per tap.
+  const handleMicButton = () => {
+    if (isTouchDevice && !voiceAlwaysOn) {
+      if (isListening) stopListening();
+      else {
+        stopSpeaking();
+        startListening().catch(() => {});
+      }
+      return;
+    }
+    toggleVoiceAlwaysOn();
   };
 
   const handleViewSelect = (id: ViewId | null) => {
@@ -736,6 +971,8 @@ export default function JarvisPage() {
         onLogout={handleLogout}
         muted={muted}
         onToggleMuted={toggleMuted}
+        persona={activePersona}
+        onSwitchPersona={(p) => switchPersona(p, true)}
       />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", minHeight: 0 }}>
@@ -772,6 +1009,9 @@ export default function JarvisPage() {
                 if (articles.length === 0) return;
                 fetchAndSpeakNewsSummary(articles, newsActiveCategory ?? null);
               }}
+              onError={() => {
+                if (!mutedRef.current) speak(NEWS_FEED_DOWN_LINE, "jarvis");
+              }}
             />
           </div>
         ) : routedView === "investment-dashboard" ? (
@@ -806,10 +1046,12 @@ export default function JarvisPage() {
         onSend={handleSend}
         isListening={isListening}
         partialTranscript={partialTranscript}
-        onToggleListen={toggleVoiceAlwaysOn}
+        onMicButton={handleMicButton}
         voiceAlwaysOn={voiceAlwaysOn}
+        tapToTalk={isTouchDevice && !voiceAlwaysOn}
         state={state}
-        isLoading={isLoading}
+        inputDisabled={isThinking}
+        persona={activePersona}
       />
 
       <NavDots activeView={activeView} onSelect={handleViewSelect} />
@@ -834,6 +1076,8 @@ function Header({
   onLogout,
   muted,
   onToggleMuted,
+  persona,
+  onSwitchPersona,
 }: {
   state: JARVISState;
   activeView: ViewId | null;
@@ -844,6 +1088,8 @@ function Header({
   onLogout: () => void;
   muted: boolean;
   onToggleMuted: () => void;
+  persona: PersonaId;
+  onSwitchPersona: (p: PersonaId) => void;
 }) {
   const showBack =
     activeView !== null || routedView !== null || lucyOpen || portfolioOpen;
@@ -917,6 +1163,34 @@ function Header({
         >
           STAYFUL COMMAND
         </span>
+        <span style={{ width: 1, height: 14, background: C.border }} />
+        {/* Staff toggle — who Zac is talking to */}
+        <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Who you are talking to">
+          {PERSONA_IDS.map((id) => {
+            const active = id === persona;
+            return (
+              <button
+                key={id}
+                onClick={() => onSwitchPersona(id)}
+                className="mono"
+                title={`${PERSONAS[id].name} — ${PERSONAS[id].title}`}
+                aria-pressed={active}
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.15em",
+                  background: active ? `${C.primary}22` : "none",
+                  border: `1px solid ${active ? C.primary : C.border}`,
+                  color: active ? C.bright : C.textLow,
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                }}
+              >
+                {PERSONAS[id].name.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -1077,17 +1351,6 @@ function NoViewLayout({
           padding: "0 20px 12px",
         }}
       >
-        {messages.length === 0 && (
-          <div style={{ marginTop: 12 }}>
-            <Bubble
-              msg={{
-                role: "assistant",
-                content:
-                  "Good to have you back, Zac. Systems are online. Pipeline is active. How may I assist?",
-              }}
-            />
-          </div>
-        )}
         {messages.map((m) => (
           <MessageRenderer
             key={m.id}
@@ -1183,20 +1446,24 @@ function CommandInput({
   onSend,
   isListening,
   partialTranscript,
-  onToggleListen,
+  onMicButton,
   voiceAlwaysOn,
+  tapToTalk,
   state,
-  isLoading,
+  inputDisabled,
+  persona,
 }: {
   input: string;
   setInput: (s: string) => void;
   onSend: () => void;
   isListening: boolean;
   partialTranscript: string;
-  onToggleListen: () => void;
+  onMicButton: () => void;
   voiceAlwaysOn: boolean;
+  tapToTalk: boolean;
   state: JARVISState;
-  isLoading: boolean;
+  inputDisabled: boolean;
+  persona: PersonaId;
 }) {
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1208,7 +1475,15 @@ function CommandInput({
   // Show partial transcript while listening, unless the user has started typing
   const displayValue =
     isListening && partialTranscript && input.length === 0 ? partialTranscript : input;
-  const canSend = input.trim().length > 0 && !isLoading;
+  const canSend = input.trim().length > 0 && !inputDisabled;
+  const micOn = voiceAlwaysOn || (tapToTalk && isListening);
+  const micTitle = tapToTalk
+    ? isListening
+      ? "Listening — tap to stop"
+      : "Tap to talk"
+    : voiceAlwaysOn
+    ? "Voice always-on (click to disable)"
+    : "Voice off (click to enable always-on)";
 
   return (
     <div
@@ -1241,8 +1516,12 @@ function CommandInput({
           value={displayValue}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder={isListening ? "Listening… (or type)" : "Command JARVIS…"}
-          disabled={isLoading}
+          placeholder={
+            isListening
+              ? "Listening… (or type)"
+              : `Ask ${PERSONAS[persona].name} anything…`
+          }
+          disabled={inputDisabled}
           style={{
             flex: 1,
             background: "none",
@@ -1256,19 +1535,19 @@ function CommandInput({
         />
         <div style={{ display: "flex", gap: 4 }}>
           <button
-            onClick={onToggleListen}
+            onClick={onMicButton}
             style={{
               width: 30,
               height: 30,
               borderRadius: 6,
               border: `1px solid ${
-                voiceAlwaysOn
+                micOn
                   ? isListening
                     ? C.amber + "66"
                     : C.primary + "66"
                   : C.border
               }`,
-              background: voiceAlwaysOn
+              background: micOn
                 ? isListening
                   ? `${C.amber}15`
                   : `${C.primary}15`
@@ -1279,10 +1558,10 @@ function CommandInput({
               justifyContent: "center",
               transition: "all .2s",
             }}
-            title={voiceAlwaysOn ? "Voice always-on (click to disable)" : "Voice off (click to enable always-on)"}
-            aria-label={voiceAlwaysOn ? "Disable always-on voice" : "Enable always-on voice"}
+            title={micTitle}
+            aria-label={micTitle}
           >
-            {voiceAlwaysOn ? (
+            {micOn ? (
               <Mic size={13} color={isListening ? C.amber : C.bright} />
             ) : (
               <MicOff size={13} color={C.textLow} />
@@ -1319,7 +1598,9 @@ function CommandInput({
           letterSpacing: "0.12em",
         }}
       >
-        SAY &quot;NEWS&quot;, &quot;LEADS&quot;, &quot;TASKS&quot;, &quot;INVESTMENTS&quot;, &quot;COMMAND CENTRE&quot; TO NAVIGATE
+        {tapToTalk
+          ? "TAP THE MIC TO TALK · ASK JARVIS OR JANET ANYTHING"
+          : "ASK JARVIS OR JANET ANYTHING · SAY \"NEWS\", \"LEADS\", \"PORTFOLIO\" OR \"SALES\" TO NAVIGATE"}
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ export interface StoredMessage {
   content: string;
   timestamp: string;
   model?: string;
+  speaker?: 'jarvis' | 'janet';
 }
 
 export interface SessionContext {

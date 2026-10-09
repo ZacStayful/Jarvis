@@ -1,3 +1,5 @@
+import { isCommandShaped } from '@/lib/intent-utils';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type LucyCommandType =
@@ -10,7 +12,11 @@ export type LucyCommandType =
 
 // ─── Pattern definitions ──────────────────────────────────────────────────────
 
-const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
+// Convention (lib/intent-utils.ts): `tests` match anywhere; `loose` only
+// match when the utterance is command-shaped ("open monday", "my leads"),
+// so "I'll do it on Monday" and "I had a chat about the pipeline" go to
+// Claude untouched.
+const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[]; loose?: RegExp[] }> = [
   // Navigate — open the Lucy view (which IS the Monday-backed pipeline UI)
   {
     type: 'navigate',
@@ -25,22 +31,22 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
       /lucy center/i,
       /lucy command/i,
       /open the lucy/i,
-      // Monday / pipeline phrases — Lucy IS the Monday integration UI
-      /\bmonday\b/i,
       /monday\s*\.?\s*com/i,
-      /monday access/i,
-      /monday pipeline/i,
-      /open pipeline/i,
-      /show pipeline/i,
-      /my pipeline/i,
-      /the pipeline/i,
+      /monday (?:board|access|pipeline)/i,
+      /open (?:the )?pipeline/i,
+      /show (?:me )?(?:the )?pipeline/i,
       /lead pipeline/i,
       /sales pipeline/i,
       /\bshow.{0,10}leads?\b/i,
       /\bcheck.{0,15}leads?\b/i,
-      /\bmy leads?\b/i,
       /\bopen.{0,10}leads?\b/i,
+    ],
+    loose: [
+      /\bmonday\b/i,
+      /\b(?:my|the) pipeline\b/i,
+      /\bmy leads?\b/i,
       /\bcrm\b/i,
+      /\bleads?\b/i,
     ],
   },
   // Recommend — who should Lucy call
@@ -74,7 +80,7 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
       /activate lucy/i,
       /lucy.{0,10}campaign/i,
       /queue.{0,10}lucy/i,
-      /lucy.{0,10}go/i,
+      /lucy.{0,10}go\b/i,
     ],
   },
   // Calls — view recent call results
@@ -86,14 +92,13 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
       /lucy.{0,15}stat/i,
       /how.{0,10}lucy.{0,10}doing/i,
       /lucy.{0,15}performance/i,
-      /recent calls?/i,
       /lucy.{0,15}history/i,
       /lucy.{0,15}calls?/i,
-      /call record/i,
       /who.{0,10}lucy.{0,10}called/i,
       /lucy.{0,10}numbers/i,
       /lucy.{0,10}outcomes?/i,
     ],
+    loose: [/recent calls?/i, /call record/i],
   },
   // Analyse — deep intelligence run
   {
@@ -103,14 +108,13 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
       /lucy.{0,15}pattern/i,
       /lucy.{0,15}intelligence/i,
       /lucy.{0,15}insight/i,
-      /call pattern/i,
       /objection pattern/i,
       /lucy.{0,10}deep/i,
       /deep.{0,10}lucy/i,
       /lucy.{0,10}report/i,
       /intelligence.{0,10}lucy/i,
-      /run.{0,10}analy/i,
     ],
+    loose: [/call pattern/i, /run.{0,10}analy/i],
   },
 ];
 
@@ -122,8 +126,11 @@ const PATTERNS: Array<{ type: LucyCommandType; tests: RegExp[] }> = [
  */
 export function detectLucyCommand(message: string): LucyCommandType {
   const input = message.trim();
-  for (const { type, tests } of PATTERNS) {
+  if (!input) return null;
+  const commandShaped = isCommandShaped(input);
+  for (const { type, tests, loose } of PATTERNS) {
     if (tests.some(rx => rx.test(input))) return type;
+    if (commandShaped && loose?.some(rx => rx.test(input))) return type;
   }
   return null;
 }

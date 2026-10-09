@@ -2,6 +2,14 @@
 
 export type JARVISState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
+// ─── Staff ────────────────────────────────────────────────────────────────────
+// Two members of staff share one conversation: JARVIS (managing director) and
+// Janet (marketing creative director). Every assistant message records who
+// spoke so the UI can label it and speak it in the right voice.
+
+export type PersonaId = 'jarvis' | 'janet';
+export type InputMode = 'voice' | 'text';
+
 // ─── Message Types ────────────────────────────────────────────────────────────
 
 export type MessageRole = 'user' | 'assistant';
@@ -12,11 +20,18 @@ export interface BaseMessage {
   timestamp: Date;
   isStreaming?: boolean;
   model?: string;
+  // Which member of staff said it (assistant messages only).
+  speaker?: PersonaId;
+  // Shown in the feed but never sent to the API, KV or the EOD transcript:
+  // greetings, handover lines, error notices.
+  local?: boolean;
 }
 
 export interface TextMessage extends BaseMessage {
   type: 'text';
   content: string;
+  // Technical detail behind a friendly error line (rendered small, never spoken).
+  errorDetail?: string;
 }
 
 export interface ApprovalMessage extends BaseMessage {
@@ -130,11 +145,20 @@ export interface UseJARVISOptions {
   onError?: (error: string) => void;
 }
 
+// Per-message context the client knows and the server doesn't.
+export interface SendOptions {
+  inputMode?: InputMode;
+  persona?: PersonaId;
+  activeView?: string;
+  viewJustOpened?: boolean;
+  viewContext?: string;
+}
+
 export interface UseJARVISReturn {
   messages: Message[];
   jarvisState: JARVISState;
   isLoading: boolean;
-  sendMessage: (content: string, deep?: boolean) => Promise<void>;
+  sendMessage: (content: string, deep?: boolean, opts?: SendOptions) => Promise<void>;
   approveAction: (messageId: string) => Promise<void>;
   denyAction: (messageId: string) => void;
   clearMessages: () => void;
@@ -152,6 +176,12 @@ export interface ChatRequestBody {
   messages: ApiMessage[];
   deep?: boolean;
   maxTokens?: number;
+  crossSessionContext?: string;
+  persona?: PersonaId;
+  inputMode?: InputMode;
+  activeView?: string;
+  viewJustOpened?: boolean;
+  viewContext?: string;
 }
 
 // ─── Integration Status ───────────────────────────────────────────────────────

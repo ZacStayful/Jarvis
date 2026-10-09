@@ -19,8 +19,7 @@ this file whenever you add or remove an integration.
 | Login / session cookie | `JARVIS_PASSWORD`, `SESSION_SECRET` | ✅ |
 | Claude chat (Opus/Sonnet streaming) | `ANTHROPIC_API_KEY` | ✅ |
 | Voice **input** (Web Speech API) | none — runs in browser | ✅ |
-| Voice **output** Phase 2 (server proxy via ElevenLabs) | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | ✅ |
-| Voice **output** Phase 8 (client-streaming, lower latency) | `NEXT_PUBLIC_ELEVENLABS_API_KEY`, `NEXT_PUBLIC_ELEVENLABS_VOICE_ID` | 🔴 — `voiceEnabled: false` in `useJARVIS` until set |
+| Voice **output** (server proxy via ElevenLabs, queued, sentence-by-sentence, one voice per member of staff) | `ELEVENLABS_API_KEY`; JARVIS: `ELEVENLABS_VOICE_ID_JARVIS` → `ELEVENLABS_VOICE_ID`; Janet: `ELEVENLABS_VOICE_ID_JANET` → `NEXT_PUBLIC_JANET_VOICE_ID` → `ELEVENLABS_VOICE_ID` | ✅ — `ELEVENLABS_VOICE_ID` (JARVIS) and `NEXT_PUBLIC_JANET_VOICE_ID` (Janet) are set, so no new variables are needed |
 
 ## Memory / persistence
 
@@ -30,24 +29,13 @@ this file whenever you add or remove an integration.
 | Cross-session context (long-term memory) | Same as above | 🔴 |
 | End-of-day learning save | `N8N_WEBHOOK_LEARNING_SAVE` | 🟡 — wired but never observed firing |
 
-When the memory tokens are missing, JARVIS still chats fine — it just
-can't remember anything across sessions. The 401 errors are now silenced
-by the guard in `hooks/useJARVIS.ts` so they won't spam the Network tab,
-but persistence simply won't happen until both env vars are set.
-
-## Intelligence feeds
-
-| Feature | What it needs | Status |
-| --- | --- | --- |
-| News briefing (NewsAPI + Claude analysis) | `NEWSAPI_KEY` | 🔴 — last call returned 500. **Note:** the free NewsAPI tier blocks server-side requests on Vercel; a paid plan is required for production. |
-| Investment dashboard (mock) | none — uses fixtures | ✅ |
-| Portfolio Intelligence Dashboard | reads `portfolio/data/*.json` | ✅ structure, 🔴 data (placeholder zeros until you run the first quarterly update via chat) |
-
-## Lucy (Monday.com lead intelligence)
-
-| Feature | What it needs | Status |
-| --- | --- | --- |
-| Monday API access | `MONDAY_API_KEY`, optional `MONDAY_BOARD_ID` (defaults to `5891626711`) | 🟡 — env var likely set; no `/api/lucy/*` calls observed in latest log window (nav collision now fixed in this commit, so try again) |
+When the memory tokens are missing or mismatched, JARVIS still chats fine
+— he just can't remember anything across sessions, and a page refresh
+starts blank. The client now keeps one session id per tab
+(`sessionStorage`) and summarises on tab-hide with a keepalive request, so
+once the two tokens match (set them to the same value, then redeploy —
+the `NEXT_PUBLIC_` one is inlined at build time) restore and cross-session
+memory work without further code changes.
 
 ## Marketing department (Jarvis + Janet)
 
@@ -56,7 +44,7 @@ Reads the private `ZacStayful/stayful-ads` repo at runtime (read-only, cached 1h
 | Feature | What it needs (Vercel env) | Status |
 | --- | --- | --- |
 | Department view + director answers (`/api/marketing`, chat context) | `STAYFUL_ADS_GITHUB_TOKEN` — fine-grained token, only `stayful-ads`, Contents read-only, server-side (never `NEXT_PUBLIC_`) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it the view and the directors say the data is unavailable |
-| Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's) | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice. Inlined at build: redeploy after changing it |
+| Janet's own voice | `NEXT_PUBLIC_JANET_VOICE_ID` (ElevenLabs voice ID, different from Jarvis's); `/api/speak` reads it server-side by persona, so it no longer needs to be inlined | 🟡 — set in Vercel (Production + Preview); awaiting the preview test. Without it Janet speaks in Jarvis's voice |
 
 ## API route security
 
@@ -114,9 +102,11 @@ certainly not set in Vercel.
    bundle at build time, so changing it requires a redeploy.
 2. **NewsAPI free tier.** Doesn't work on Vercel — you need the paid
    plan ($449/mo last we checked) or swap to a different feed source.
-3. **ElevenLabs Phase 8 vs Phase 2.** Right now `app/page.tsx` uses the
-   Phase 2 server proxy (`/api/speak`) and explicitly disables Phase 8
-   client streaming with `voiceEnabled: false`. To switch, set the
-   `NEXT_PUBLIC_ELEVENLABS_*` vars and flip that flag.
+3. **Two voices.** `/api/speak` picks the ElevenLabs voice by persona:
+   JARVIS from `ELEVENLABS_VOICE_ID_JARVIS` then `ELEVENLABS_VOICE_ID`;
+   Janet from `ELEVENLABS_VOICE_ID_JANET`, then `NEXT_PUBLIC_JANET_VOICE_ID`,
+   then `ELEVENLABS_VOICE_ID`. The old client-side streaming path
+   (`NEXT_PUBLIC_ELEVENLABS_*`) has been removed; speech now streams
+   sentence by sentence through the proxy.
 4. **`process.env.NEXT_PUBLIC_*`** values are inlined at **build time**.
    Changing them in Vercel requires a redeploy, not just a restart.
