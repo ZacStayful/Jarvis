@@ -80,6 +80,10 @@ Then set `JARVIS_API_SECRET` in Vercel (Production and Preview) and redeploy. An
 
 Lead-facing routes (`/api/qualifier`, `/api/presentation`, `/api/tracking`) stay public, because leads' browsers call them. They only accept a numeric Monday item ID, known fields and short values.
 
+Self-authenticating routes skip the login check:
+- `/api/cron/weekly-intelligence`: Vercel cron sends `Authorization: Bearer <CRON_SECRET>`. The route refuses everything if `CRON_SECRET` isn't set (it is set in Vercel).
+- `/api/intelligence/approve` and `/reject`: links signed with `REVIEW_SECRET`, so they open from your inbox without a login.
+
 ## MCP integrations (Claude tool-use)
 
 These are bearer-token MCP servers wired up in `lib/mcp-servers.ts`. Each

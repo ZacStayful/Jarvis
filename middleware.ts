@@ -22,6 +22,12 @@ const SERVICE_ROUTES = [
   "/api/lucy/voice",
 ];
 
+// Routes that authenticate every request themselves, so they skip the
+// login check: the weekly-intelligence cron (Vercel sends
+// "Authorization: Bearer <CRON_SECRET>") and the approve/reject links in its
+// review email (HMAC-signed with REVIEW_SECRET, opened from Zac's inbox).
+const SELF_AUTHENTICATED_ROUTES = ["/api/cron", "/api/intelligence"];
+
 const startsWithAny = (pathname: string, prefixes: string[]) =>
   prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
@@ -58,7 +64,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (startsWithAny(pathname, PUBLIC_LEAD_ROUTES)) {
+  if (startsWithAny(pathname, PUBLIC_LEAD_ROUTES) || startsWithAny(pathname, SELF_AUTHENTICATED_ROUTES)) {
     return NextResponse.next();
   }
 
