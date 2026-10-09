@@ -2,6 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 // Browser-native Web Speech API. Zero cost, no external service.
 // Supported well in Chrome / Edge. macOS Safari 14+. Not Firefox.
+// On iOS Safari `continuous` recognition is unreliable, so the page uses
+// tap-to-talk there: one startListening() per utterance, the silence timer
+// finalises it.
 //
 // Replaced AssemblyAI v3 — that endpoint required a paid plan and was
 // rejecting the existing key with "Invalid API key".
@@ -67,13 +70,7 @@ export interface UseVoiceInputReturn {
 export function useVoiceInput(
   options: UseVoiceInputOptions = {}
 ): UseVoiceInputReturn {
-  const {
-    onFinalTranscript,
-    onPartialTranscript,
-    onStateChange,
-    onError,
-    silenceThresholdMs = 1500,
-  } = options;
+  const { silenceThresholdMs = 1500 } = options;
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [partialTranscript, setPartialTranscript] = useState('');
@@ -83,14 +80,21 @@ export function useVoiceInput(
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finalTextRef = useRef('');
   const intentionallyStoppedRef = useRef(false);
+  const voiceStateRef = useRef<VoiceState>('idle');
 
-  const updateState = useCallback(
-    (state: VoiceState) => {
-      setVoiceState(state);
-      onStateChange?.(state);
-    },
-    [onStateChange]
-  );
+  // The recogniser's event handlers are installed once per startListening()
+  // and then live for as long as the browser keeps the session open. Reading
+  // the callbacks through refs means they always see the latest render's
+  // closures — otherwise the page's local handlers ran with stale
+  // routedView / salesOpen / salesMetrics for the life of the session.
+  const callbacksRef = useRef(options);
+  callbacksRef.current = options;
+
+  const updateState = useCallback((state: VoiceState) => {
+    voiceStateRef.current = state;
+    setVoiceState(state);
+    callbacksRef.current.onStateChange?.(state);
+  }, []);
 
   const cleanup = useCallback(() => {
     if (silenceTimerRef.current) {
@@ -116,7 +120,7 @@ export function useVoiceInput(
   }, [cleanup, updateState]);
 
   const startListening = useCallback(async () => {
-    if (voiceState === 'listening') {
+    if (voiceStateRef.current === 'listening') {
       stopListening();
       return;
     }
@@ -127,7 +131,7 @@ export function useVoiceInput(
     if (typeof window === 'undefined') {
       const errMsg = 'Voice input is only available in the browser';
       setError(errMsg);
-      onError?.(errMsg);
+      callbacksRef.current.onError?.(errMsg);
       updateState('error');
       return;
     }
@@ -137,7 +141,7 @@ export function useVoiceInput(
       const errMsg =
         'Voice input is not supported in this browser. Use Chrome or Edge.';
       setError(errMsg);
-      onError?.(errMsg);
+      callbacksRef.current.onError?.(errMsg);
       updateState('error');
       return;
     }
@@ -177,13 +181,13 @@ export function useVoiceInput(
           finalTextRef.current + (interim ? ' ' + interim : '')
         ).trim();
         setPartialTranscript(display);
-        onPartialTranscript?.(display);
+        callbacksRef.current.onPartialTranscript?.(display);
 
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
           if (finalTextRef.current.trim()) {
             const text = finalTextRef.current.trim();
-            onFinalTranscript?.(text);
+            callbacksRef.current.onFinalTranscript?.(text);
             stopListening();
           }
         }, silenceThresholdMs);
@@ -202,7 +206,7 @@ export function useVoiceInput(
             ? 'Voice recognition network error.'
             : `Voice error: ${code}`;
         setError(errMsg);
-        onError?.(errMsg);
+        callbacksRef.current.onError?.(errMsg);
         cleanup();
         updateState('error');
       };
@@ -220,20 +224,11 @@ export function useVoiceInput(
       const msg =
         err instanceof Error ? err.message : 'Failed to start voice input';
       setError(msg);
-      onError?.(msg);
+      callbacksRef.current.onError?.(msg);
       cleanup();
       updateState('error');
     }
-  }, [
-    voiceState,
-    stopListening,
-    cleanup,
-    updateState,
-    onFinalTranscript,
-    onPartialTranscript,
-    onError,
-    silenceThresholdMs,
-  ]);
+  }, [stopListening, cleanup, updateState, silenceThresholdMs]);
 
   useEffect(() => {
     return () => cleanup();
