@@ -1,3 +1,5 @@
+import { isCommandShaped, normalise } from '@/lib/intent-utils';
+
 export const C = {
   bg:       '#050c05',
   surface:  '#0b190a',
@@ -25,29 +27,23 @@ export type ViewId =
   | 'intelligence'
   | 'log';
 
-const COMMANDS: Record<string, ViewId> = {
-  'command centre':  'command',
-  'command center':  'command',
-  'news':            'news',
-  'briefing':        'news',
-  'investments':     'investments',
-  'portfolio':       'investments',
-  'stocks':          'investments',
-  'leads':           'leads',
-  'sales':           'leads',
-  'pipeline':        'leads',
-  'tasks':           'tasks',
-  'to do':           'tasks',
-  'intelligence':    'intelligence',
-  'log':             'log',
-  'conversation':    'log',
-  'transcript':      'log',
-};
+// Legacy keyword panes. Only explicit, command-shaped utterances open them
+// ("open tasks", "show the command centre"); an ordinary sentence that
+// happens to contain "log" or "to do" never does. The words owned by the
+// real features (news, investments, portfolio, leads, sales, pipeline) are
+// routed by their own matchers in app/page.tsx before this runs.
+const COMMANDS: Array<{ pattern: RegExp; view: ViewId }> = [
+  { pattern: /\bcommand\s+cent(?:re|er)\b/, view: 'command' },
+  { pattern: /\btasks?\b|\bto[- ]?dos?\b|\btask\s+cent(?:re|er)\b/, view: 'tasks' },
+  { pattern: /\bintelligence\b/, view: 'intelligence' },
+  { pattern: /\bconversation\s+log\b|\btranscripts?\b|\b(?:the\s+)?log\b/, view: 'log' },
+];
 
 export function routeCommand(text: string): ViewId | null {
-  const lower = text.toLowerCase();
-  for (const [key, view] of Object.entries(COMMANDS)) {
-    if (lower.includes(key)) return view;
+  if (!isCommandShaped(text)) return null;
+  const lower = normalise(text);
+  for (const { pattern, view } of COMMANDS) {
+    if (pattern.test(lower)) return view;
   }
   return null;
 }

@@ -1,3 +1,5 @@
+import { isCommandShaped } from '@/lib/intent-utils';
+
 // Portfolio Intelligence Dashboard — voice/text command detection.
 // Mirrors the lib/lucy-commands.ts pattern so the chat layer can detect
 // "open portfolio" / "show my conviction" / etc. and switch views.
@@ -8,21 +10,27 @@ export type PortfolioCommandType =
   | 'projection' // open the 50-year projection tool (route TBD)
   | null;
 
-const PATTERNS: Array<{ type: PortfolioCommandType; tests: RegExp[] }> = [
+// Convention (lib/intent-utils.ts): `tests` match anywhere; `loose` only
+// match when the utterance is command-shaped, so "what's your conviction on
+// the Leeds deal?" stays a conversation.
+const PATTERNS: Array<{ type: PortfolioCommandType; tests: RegExp[]; loose?: RegExp[] }> = [
   {
     type: 'navigate',
     // Naming: "Portfolio Dashboard" or "Conviction Tracker" — distinct from
-    // Phase 5's live Investment Dashboard. Trigger phrases avoid the
-    // overlap (no plain "investment").
+    // the live Investment Dashboard. Trigger phrases avoid the overlap (no
+    // plain "investment").
+    loose: [
+      /\bconviction\b/i,
+      /\bholdings?\b/i,
+      /\bmy positions?\b/i,
+      /\bportfolio\b/i,
+    ],
     tests: [
       /portfolio dashboard/i,
       /portfolio intelligence/i,
       /portfolio tracker/i,
       /conviction tracker/i,
-      /\bconviction\b/i,
       /billion lives/i,
-      /\bholdings?\b/i,
-      /\bmy positions?\b/i,
       /open portfolio/i,
       /show portfolio/i,
       /go to portfolio/i,
@@ -49,19 +57,18 @@ const PATTERNS: Array<{ type: PortfolioCommandType; tests: RegExp[] }> = [
   },
   {
     type: 'projection',
-    tests: [
-      /projection/i,
-      /50.?year/i,
-      /fifty.?year/i,
-      /wealth projection/i,
-      /retirement projection/i,
-    ],
+    tests: [/wealth projection/i, /retirement projection/i],
+    loose: [/projection/i, /50.?year/i, /fifty.?year/i],
   },
 ];
 
 export function detectPortfolioCommand(message: string): PortfolioCommandType {
-  for (const { type, tests } of PATTERNS) {
-    if (tests.some(p => p.test(message))) return type;
+  const input = message.trim();
+  if (!input) return null;
+  const commandShaped = isCommandShaped(input);
+  for (const { type, tests, loose } of PATTERNS) {
+    if (tests.some(p => p.test(input))) return type;
+    if (commandShaped && loose?.some(p => p.test(input))) return type;
   }
   return null;
 }

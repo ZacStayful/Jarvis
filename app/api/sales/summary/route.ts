@@ -1,5 +1,6 @@
 // app/api/sales/summary/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { buildSalesContextLine } from "@/lib/sales/context";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -28,9 +29,7 @@ export async function POST(req: NextRequest) {
 
 Speak directly to Zac Harrison, the founder. Address him as "sir" naturally — not every sentence, but consistently throughout. Your voice is calm, British, intelligent, authoritative. Like JARVIS from Iron Man. Be precise. Use specific numbers always. Never say could or potential — state facts. This is spoken audio — no bullet points, no lists, no markdown. Natural flowing sentences only. 3-4 sentences for briefings. 2-3 for hypotheticals. 1-2 for section observations. End with a single actionable recommendation OR a natural follow-up question — not both. Vary your phrasing. Sound like a brilliant analyst having a conversation, not reading a report.`;
 
-    const ctx = `Pipeline (from 1st May 2026):
-
-${p.totalLeads} leads added. ${p.webMeetingCount} web meetings booked, ${p.webMeetingsSat} sat, ${p.webMeetingsNoShow} no shows. ${p.customersWon} customers won. ${p.presentationsSent} presentations sent, ${p.engaged} engaged (${r.presentationEngagement}%). Snapshot: ${s.pipeline} in pipeline, ${s.warm} warm, ${s.specialOffer} special offer, ${s.booked} booked, ${s.noShow} no shows, ${s.customer} total customers. Rates: ${r.attendanceRate}% attendance, ${r.postMeetingClose}% post-meeting close, ${r.overallConversion}% overall. Efficiency: ${e.avgCallsPostMeeting} avg calls per post-meeting lead, ${e.avgEmailsPostMeeting} avg emails. Offers: ${m.offers?.active} active, ${m.offers?.expiringThisWeek} expiring this week.`;
+    const ctx = buildSalesContextLine(m) ?? "";
 
     const sectionCtx: Record<string, string> = {
       funnel: `Funnel: ${p.totalLeads} leads added, ${p.webMeetingCount} booked, ${p.webMeetingsSat} sat, ${p.customersWon} converted.`,
