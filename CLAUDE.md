@@ -108,6 +108,12 @@ person is a data change.
   addressed (`capacityGoesToJarvis`). It changes no view unless Zac asks to
   see the department. The server attaches the MARKETING CONTEXT for it in
   any view, and the CAPACITY rules sit in `marketingDepartmentRules`.
+- **Scaling layers** (stayful-ads, 10 Oct): for JARVIS only, the context also quotes
+  `HOW_META_SCALES.md`, `READING_THE_NUMBERS.md`, `SITUATIONS.md`, `ACCOUNT_LEARNINGS.md` and the last 12
+  journal rows; the HOW JARVIS DECIDES block makes him name the situation (S-number) and answer in six parts.
+  `SCALING_PLAN.md` is quoted without section 13 (it pushed the file past the 30k cap) and history only via
+  `compactHistory` (raw lines are ~10k characters, and the cap keeps the start, i.e. the oldest weeks).
+  The view's lanes panel uses the pure helpers in `lib/ads/lanes.ts`.
 
 ---
 
