@@ -12,6 +12,7 @@
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import { C } from "@/lib/jarvis-design";
 import { DIRECTORS } from "@/lib/ads/speakers";
+import { campaignsByLane, openAbTests, warmAudienceSize } from "@/lib/ads/lanes";
 import type {
   AngleCoverage,
   CapacityStageId,
@@ -21,7 +22,10 @@ import type {
   RegisterRow,
   SnapshotAd,
   SnapshotAdSet,
+  SnapshotAudience,
+  SnapshotCampaign,
   SnapshotCapacity,
+  SnapshotDiagnosis,
   WeeklySnapshot,
 } from "@/lib/ads/types";
 import type { JARVISState, Message } from "@/types/jarvis";
@@ -224,10 +228,17 @@ function JarvisPanel({ snapshot, history }: { snapshot: WeeklySnapshot; history:
           </span>
         </div>
         {scaling.reason && <Para>{scaling.reason}</Para>}
+        <Situations diagnosis={snapshot.diagnosis ?? null} />
         <div className="mono" style={{ fontSize: 9, color: C.textMid, letterSpacing: "0.1em", marginTop: 6 }}>
           NEXT REVIEW · {fmtDate(scaling.next_review).toUpperCase()}
         </div>
       </Block>
+
+      {(snapshot.campaigns ?? []).length > 0 && (
+        <Block title="CAMPAIGNS BY LANE" colour={C.primary}>
+          <Lanes campaigns={snapshot.campaigns ?? []} audiences={snapshot.audiences ?? []} />
+        </Block>
+      )}
 
       <Block title="LEAD DATABASE CAPACITY" colour={C.primary}>
         <CapacityPanel capacity={snapshot.capacity ?? null} asOf={snapshot.week_ending} />
@@ -360,6 +371,95 @@ function Trend({ history, ceiling }: { history: WeeklySnapshot[]; ceiling: numbe
         <span style={{ color: C.bright }}>━</span> COST PER LEAD · <span style={{ color: C.red }}>┄</span> CEILING ·{" "}
         <span style={{ color: C.primary }}>▮</span> WEEKLY LEADS
       </div>
+    </div>
+  );
+}
+
+// The situations the Friday check matched (stayful-ads scaling/SITUATIONS.md),
+// strongest first as written. Hidden when the snapshot has no diagnosis.
+function Situations({ diagnosis }: { diagnosis: SnapshotDiagnosis | null }) {
+  const matches = (diagnosis?.situations ?? []).filter((s) => s.id);
+  const fresh = diagnosis?.new_situation;
+  if (matches.length === 0 && !fresh) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+      {matches.map((s, i) => (
+        <div key={`${s.id}-${i}`} style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <Chip colour={s.fit === "strong" ? C.cyan : C.textMid}>
+            {[s.id, s.fit].filter(Boolean).join(" · ").toUpperCase()}
+          </Chip>
+          {s.evidence && (
+            <span className="raj" style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.45 }}>
+              {s.evidence}
+            </span>
+          )}
+        </div>
+      ))}
+      {fresh && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <Chip colour={C.amber}>NEW SITUATION</Chip>
+          <span className="raj" style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.45 }}>
+            {fresh}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const learningLabel = (c: SnapshotCampaign) =>
+  c.learning_status ? `${c.learning_status}${c.learning_source === "estimated" ? " (est.)" : ""}` : "—";
+
+// Campaigns grouped by lane, then each open A/B test with its versions side by
+// side (control first). Retargeting's warm audiences show while it isn't live.
+function Lanes({ campaigns, audiences }: { campaigns: SnapshotCampaign[]; audiences: SnapshotAudience[] }) {
+  const groups = campaignsByLane(campaigns);
+  const tests = openAbTests(campaigns);
+  const retargetingLive = groups.some((g) => g.lane === "retargeting");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {groups.map((g) => (
+        <div key={g.lane}>
+          <Label>{g.label}</Label>
+          <Table
+            head={["CAMPAIGN", "BUDGET", "SPEND", "LEADS", "CPL", "LEARNING"]}
+            rows={g.campaigns.map((c) => [
+              `${c.name ?? c.id ?? "—"}${c.kept_running ? " (kept running)" : ""}`,
+              gbpDaily(c.daily_budget_gbp),
+              gbp(c.spend_gbp),
+              count(c.leads),
+              gbp(c.cost_per_lead_gbp),
+              learningLabel(c),
+            ])}
+          />
+        </div>
+      ))}
+      {tests.map(({ campaign, test, versions }, i) => (
+        <div key={test.test_id ?? campaign.id ?? i}>
+          <Label>A/B TEST · {campaign.name ?? "—"}</Label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+            <Chip colour={C.cyan}>{(test.status ?? "—").toUpperCase()}</Chip>
+            {test.verdict && <Chip colour={C.bright}>{test.verdict.toUpperCase()}</Chip>}
+            {test.variable && <Chip colour={C.textMid}>{test.variable.toUpperCase()}</Chip>}
+            {test.ends && <Chip colour={C.textMid}>ENDS {fmtDate(test.ends, false).toUpperCase()}</Chip>}
+          </div>
+          <Table
+            head={["", ...versions.map((v) => `${v.name ?? "—"}${v.control ? " (control)" : ""}`)]}
+            rows={[
+              ["SPEND", ...versions.map((v) => gbp(v.spend_gbp))],
+              ["LEADS", ...versions.map((v) => count(v.leads))],
+              ["COST PER LEAD", ...versions.map((v) => gbp(v.cost_per_lead_gbp))],
+              ["QUALITY FAIL", ...versions.map((v) => pct(v.quality_fail_pct))],
+            ]}
+          />
+        </div>
+      ))}
+      {!retargetingLive && audiences.length > 0 && (
+        <Muted>
+          Retargeting not live yet. Warm audiences:{" "}
+          {audiences.map((a) => `${a.name ?? "—"} ${warmAudienceSize(a)}`).join("; ")}.
+        </Muted>
+      )}
     </div>
   );
 }

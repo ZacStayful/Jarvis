@@ -5,8 +5,8 @@
 //
 // Every field is optional/nullable on purpose: the Friday ad check writes the
 // snapshot, fields start as null until there's data, and older snapshots may
-// predate a block (e.g. `creative`, `capacity`). Render "—" for anything missing; never
-// fill in a number.
+// predate a block (e.g. `creative`, `capacity`, the lanes blocks). Render "—" for anything
+// missing; never fill in a number.
 
 export type Director = 'jarvis' | 'janet';
 
@@ -47,6 +47,10 @@ export interface SnapshotAd {
   ctr_pct?: number | null;
   hold_rate_pct?: number | null;
   reason?: string | null;
+  /** Meta's rankings (10 Oct 2026): ABOVE_AVERAGE, AVERAGE, BELOW_AVERAGE_35/20/10, null until available. */
+  quality_ranking?: string | null;
+  engagement_ranking?: string | null;
+  conversion_ranking?: string | null;
 }
 
 export interface SnapshotScaling {
@@ -56,6 +60,8 @@ export interface SnapshotScaling {
   last_stable_budget_gbp?: number | null;
   reason?: string | null;
   next_review?: string | null;
+  /** The review period's one change, any lane (stayful-ads SCALING_PLAN.md section 13). */
+  change?: string | null;
 }
 
 export interface SnapshotCreativeBrief {
@@ -69,6 +75,8 @@ export interface SnapshotCreativeBrief {
 export interface SnapshotCreative {
   reserve_count?: number | null;
   reserve_needed?: number | null;
+  /** Concepts on the ready bench, waiting to go into Main when it tires. */
+  bench?: string[] | null;
   briefs?: SnapshotCreativeBrief[] | null;
   ready_to_upload?: string[] | null;
   waiting_on_zac?: string[] | null;
@@ -164,6 +172,122 @@ export interface SnapshotCapacity {
   notes?: string[] | null;
 }
 
+// Campaign lanes and the weekly diagnosis (added 10 Oct 2026; rules in stayful-ads
+// scaling/SCALING_PLAN.md sections 2, 13 and 16). Main is the scaling engine, Test runs
+// Meta A/B tests, Retargeting shows ads to the two warm audiences only.
+
+export type CampaignLane = 'main' | 'test' | 'retargeting';
+
+export interface SnapshotAbVersion {
+  name?: string | null;
+  control?: boolean | null;
+  spend_gbp?: number | null;
+  leads?: number | null;
+  cost_per_lead_gbp?: number | null;
+  quality_fail_pct?: number | null;
+}
+
+export interface SnapshotAbTest {
+  test_id?: string | null;
+  /** "creative" or "audience" */
+  variable?: string | null;
+  started?: string | null;
+  ends?: string | null;
+  /** running | ended | cut | paused */
+  status?: string | null;
+  /** null while running; win | draw | loss | no_verdict */
+  verdict?: string | null;
+  versions?: SnapshotAbVersion[] | null;
+}
+
+export interface SnapshotCampaign {
+  id?: string | null;
+  name?: string | null;
+  lane?: CampaignLane | string | null;
+  daily_budget_gbp?: number | null;
+  spend_gbp?: number | null;
+  leads?: number | null;
+  cost_per_lead_gbp?: number | null;
+  cpm_gbp?: number | null;
+  ctr_pct?: number | null;
+  link_clicks?: number | null;
+  form_completion_pct?: number | null;
+  frequency_7d?: number | null;
+  learning_status?: string | null;
+  /** "meta" when Meta reported it, "estimated" when worked out from the change log */
+  learning_source?: string | null;
+  /** A test campaign kept running after its test ended */
+  kept_running?: boolean | null;
+  ab_test?: SnapshotAbTest | null;
+}
+
+export interface SnapshotAudience {
+  id?: string | null;
+  name?: string | null;
+  retention_days?: number | null;
+  size_lower?: number | null;
+  size_upper?: number | null;
+  /** false when Meta returned a floor value (small audience, real size unknown) */
+  size_known?: boolean | null;
+  as_of?: string | null;
+}
+
+/** A decision_journal.csv row still waiting for its actual. */
+export interface SnapshotJournalEntry {
+  date?: string | null;
+  lane?: string | null;
+  situation_id?: string | null;
+  decision?: string | null;
+  expected_metric?: string | null;
+  expected_value?: string | null;
+  expected_by?: string | null;
+  confidence?: string | null;
+}
+
+export interface SnapshotSituationMatch {
+  /** S01… in stayful-ads scaling/SITUATIONS.md; S99 = nothing fits */
+  id?: string | null;
+  /** strong | partial */
+  fit?: string | null;
+  evidence?: string | null;
+}
+
+export interface SnapshotDiagnosis {
+  norms?: Record<string, number | null> | null;
+  changes_pct?: {
+    vs_last_week?: Record<string, number | null> | null;
+    vs_norm?: Record<string, number | null> | null;
+  } | null;
+  marginal_cpl_gbp?: number | null;
+  account_cpl_gbp?: number | null;
+  last_significant_edit?: string | null;
+  situations?: SnapshotSituationMatch[] | null;
+  new_situation?: string | null;
+  /** ACCOUNT_LEARNINGS.md rule ids used this week */
+  rules_used?: string[] | null;
+}
+
+export interface SnapshotBreakdownBucket {
+  bucket?: string | null;
+  spend_share_pct?: number | null;
+  leads?: number | null;
+  cost_per_lead_gbp?: number | null;
+}
+
+export interface SnapshotBreakdowns {
+  placement?: SnapshotBreakdownBucket[] | null;
+  age_gender?: SnapshotBreakdownBucket[] | null;
+  region?: SnapshotBreakdownBucket[] | null;
+}
+
+export interface SnapshotAccountChange {
+  date?: string | null;
+  object?: string | null;
+  change?: string | null;
+  /** "you" (Zac) or "meta"; never a name */
+  by?: string | null;
+}
+
 export interface WeeklySnapshot {
   schema_version?: number | null;
   generated_at?: string | null;
@@ -187,6 +311,12 @@ export interface WeeklySnapshot {
   open_setup_actions?: string[] | null;
   creative?: SnapshotCreative | null;
   capacity?: SnapshotCapacity | null;
+  campaigns?: SnapshotCampaign[] | null;
+  audiences?: SnapshotAudience[] | null;
+  journal_open?: SnapshotJournalEntry[] | null;
+  diagnosis?: SnapshotDiagnosis | null;
+  breakdowns?: SnapshotBreakdowns | null;
+  account_changes?: SnapshotAccountChange[] | null;
   notes?: string[] | null;
 }
 

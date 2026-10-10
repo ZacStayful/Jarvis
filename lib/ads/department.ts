@@ -30,6 +30,10 @@ const BRANCH = 'main';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const MAX_CONTEXT_CHARS = 30_000; // per file, when quoted into the prompt
 const HISTORY_WEEKS_IN_CONTEXT = 8;
+const JOURNAL_ROWS_IN_CONTEXT = 12;
+// SCALING_PLAN.md section 13 is the snapshot format the Friday check writes. JARVIS
+// reads the snapshot itself, so the spec is left out to keep the plan under the cap.
+const SNAPSHOT_SPEC_SECTION = 13;
 
 export const ADS_FILES = {
   snapshot: 'scaling/weekly_snapshot.json',
@@ -42,6 +46,13 @@ export const ADS_FILES = {
   register: 'register/ad_register.csv',
   learnings: 'register/learnings.md',
   voices: 'register/voices.csv',
+  // JARVIS's scaling layers (stayful-ads, 10 Oct 2026): why numbers move, how to
+  // read them, the situations, the account's own rules and the decision journal.
+  howMetaScales: 'scaling/HOW_META_SCALES.md',
+  readingTheNumbers: 'scaling/READING_THE_NUMBERS.md',
+  situations: 'scaling/SITUATIONS.md',
+  accountLearnings: 'scaling/ACCOUNT_LEARNINGS.md',
+  decisionJournal: 'scaling/decision_journal.csv',
 } as const;
 
 export const TOKEN_MISSING_ERROR =
@@ -195,7 +206,17 @@ export function parseSnapshot(text: string): WeeklySnapshot | null {
     const value = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const snapshot = value as WeeklySnapshot;
-    return { ...snapshot, creative: snapshot.creative ?? null, capacity: snapshot.capacity ?? null };
+    return {
+      ...snapshot,
+      creative: snapshot.creative ?? null,
+      capacity: snapshot.capacity ?? null,
+      campaigns: snapshot.campaigns ?? null,
+      audiences: snapshot.audiences ?? null,
+      journal_open: snapshot.journal_open ?? null,
+      diagnosis: snapshot.diagnosis ?? null,
+      breakdowns: snapshot.breakdowns ?? null,
+      account_changes: snapshot.account_changes ?? null,
+    };
   } catch {
     return null;
   }
@@ -249,6 +270,102 @@ export function extractNumberedSection(md: string, n: number): string | null {
     }
   }
   return lines.slice(start, end).join('\n').trim();
+}
+
+/** The markdown with the level-2 section `## <n>.` replaced by a one-line note.
+ *  Unchanged if the section isn't there. */
+export function withoutNumberedSection(md: string, n: number, note: string): string {
+  const lines = md.split(/\r?\n/);
+  const start = lines.findIndex(l => new RegExp(`^##\\s+${n}[.\\s]`).test(l));
+  if (start === -1) return md;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return [...lines.slice(0, start), note, '', ...lines.slice(end)].join('\n');
+}
+
+/** CSV header plus its last `n` records. Splits on newlines outside quotes, so a
+ *  quoted field with commas or line breaks stays in one record. */
+export function lastCsvRows(text: string, n: number): string {
+  const records: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (const ch of text.replace(/^\uFEFF/, '')) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (!inQuotes && (ch === '\n' || ch === '\r')) {
+      if (current.trim() !== '') records.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim() !== '') records.push(current);
+  if (records.length === 0) return '';
+  const [header, ...rows] = records;
+  return [header, ...rows.slice(Math.max(0, rows.length - n))].join('\n');
+}
+
+/** One history week cut down to what JARVIS needs for trends. The full latest
+ *  snapshot is quoted on its own; raw history lines run ~10k characters each. */
+function compactWeek(week: WeeklySnapshot): Record<string, unknown> {
+  const scaling = week.scaling ?? {};
+  return {
+    week_ending: week.week_ending ?? null,
+    data_window_days: week.data_window_days ?? null,
+    daily_budget_gbp: week.campaign?.daily_budget_gbp ?? null,
+    week: week.week ?? null,
+    scaling: {
+      decision: scaling.decision ?? null,
+      change: scaling.change ?? null,
+      recommended_daily_budget_gbp: scaling.recommended_daily_budget_gbp ?? null,
+      reason: scaling.reason ?? null,
+      next_review: scaling.next_review ?? null,
+    },
+    campaigns: (week.campaigns ?? []).map(c => ({
+      lane: c.lane ?? null,
+      name: c.name ?? null,
+      daily_budget_gbp: c.daily_budget_gbp ?? null,
+      spend_gbp: c.spend_gbp ?? null,
+      leads: c.leads ?? null,
+      cost_per_lead_gbp: c.cost_per_lead_gbp ?? null,
+      learning_status: c.learning_status ?? null,
+      ab_test: c.ab_test
+        ? {
+            status: c.ab_test.status ?? null,
+            verdict: c.ab_test.verdict ?? null,
+            versions: (c.ab_test.versions ?? []).map(v => ({
+              name: v.name ?? null,
+              control: v.control ?? null,
+              leads: v.leads ?? null,
+              cost_per_lead_gbp: v.cost_per_lead_gbp ?? null,
+            })),
+          }
+        : null,
+    })),
+    situations: (week.diagnosis?.situations ?? []).map(s => `${s.id ?? '?'} ${s.fit ?? ''}`.trim()),
+    account_cpl_gbp: week.diagnosis?.account_cpl_gbp ?? null,
+    marginal_cpl_gbp: week.diagnosis?.marginal_cpl_gbp ?? null,
+    capacity_bottleneck: week.capacity?.bottleneck?.stage ?? null,
+  };
+}
+
+/** The newest weeks of weekly_history.jsonl that fit in `maxChars`, compacted,
+ *  one JSON object per line, oldest first. Unparseable lines are skipped. */
+export function compactHistory(text: string, maxWeeks: number, maxChars: number): string[] {
+  const weeks = parseJsonl<WeeklySnapshot>(text).slice(-maxWeeks);
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    const line = JSON.stringify(compactWeek(weeks[i]));
+    if (kept.length > 0 && used + line.length + 1 > maxChars) break;
+    kept.push(line);
+    used += line.length + 1;
+  }
+  return kept.reverse();
 }
 
 interface MarkdownTable {
@@ -321,8 +438,8 @@ export function parseAngleCoverage(anglesMd: string): AngleCoverage | null {
   return coverage;
 }
 
-/** ACTIONS.md rows whose Status isn't Done, one line each, under their
- *  phase heading. Null if no action tables were found. */
+/** ACTIONS.md rows whose Status isn't Done, Closed or Retired, one line
+ *  each, under their phase heading. Null if no action tables were found. */
 export function extractOpenActions(actionsMd: string): string | null {
   const tables = parseMarkdownTables(actionsMd).filter(
     t => t.rows.length > 0 && findColumn(t.rows[0], 'status') !== undefined
@@ -331,7 +448,7 @@ export function extractOpenActions(actionsMd: string): string | null {
   const out: string[] = [];
   for (const table of tables) {
     const open = table.rows.filter(
-      r => !(findColumn(r, 'status') ?? '').trim().toLowerCase().startsWith('done')
+      r => !/^(done|closed|retired)\b/.test((findColumn(r, 'status') ?? '').trim().toLowerCase())
     );
     if (open.length === 0) continue;
     out.push(`## ${table.heading}`);
@@ -436,7 +553,17 @@ export async function buildMarketingContext(addressed: Director | 'both'): Promi
   }
 
   const paths: string[] = [ADS_FILES.snapshot, ADS_FILES.history, ADS_FILES.department];
-  if (forJarvis) paths.push(ADS_FILES.scalingPlan, ADS_FILES.actions);
+  if (forJarvis) {
+    paths.push(
+      ADS_FILES.scalingPlan,
+      ADS_FILES.actions,
+      ADS_FILES.howMetaScales,
+      ADS_FILES.readingTheNumbers,
+      ADS_FILES.situations,
+      ADS_FILES.accountLearnings,
+      ADS_FILES.decisionJournal
+    );
+  }
   if (forJanet) paths.push(ADS_FILES.briefQueue, ADS_FILES.angles, ADS_FILES.learnings, ADS_FILES.voices);
 
   const files = await Promise.all(paths.map(p => fetchAdsFile(p)));
@@ -462,22 +589,12 @@ export async function buildMarketingContext(addressed: Director | 'both'): Promi
 
   const historyText = text(ADS_FILES.history);
   if (historyText !== null) {
-    const lines = historyText
-      .split(/\r?\n/)
-      .map(l => l.trim())
-      .filter(l => {
-        if (!l) return false;
-        try {
-          JSON.parse(l);
-          return true;
-        } catch {
-          return false;
-        }
-      })
-      .slice(-HISTORY_WEEKS_IN_CONTEXT);
+    // Compacted and newest-first within the cap: raw lines are ~10k characters
+    // each, and the cap would otherwise keep the oldest weeks and drop the newest.
+    const lines = compactHistory(historyText, HISTORY_WEEKS_IN_CONTEXT, MAX_CONTEXT_CHARS);
     blocks.push(
       quoteFile(
-        `${ADS_FILES.history} (last ${lines.length} week${lines.length === 1 ? '' : 's'}, oldest first)`,
+        `${ADS_FILES.history} (last ${lines.length} week${lines.length === 1 ? '' : 's'}, oldest first; key fields only, the latest full snapshot is above)`,
         lines.join('\n') || '(empty)'
       )
     );
@@ -488,11 +605,41 @@ export async function buildMarketingContext(addressed: Director | 'both'): Promi
 
   if (forJarvis) {
     const plan = text(ADS_FILES.scalingPlan);
-    if (plan !== null) blocks.push(quoteFile(ADS_FILES.scalingPlan, plan));
+    if (plan !== null) {
+      blocks.push(
+        quoteFile(
+          `${ADS_FILES.scalingPlan} (section ${SNAPSHOT_SPEC_SECTION}, the snapshot format, left out)`,
+          withoutNumberedSection(
+            plan,
+            SNAPSHOT_SPEC_SECTION,
+            `## ${SNAPSHOT_SPEC_SECTION}. Weekly snapshot (format spec for the Friday check; left out here: read the snapshot above)`
+          )
+        )
+      );
+    }
     const actions = text(ADS_FILES.actions);
     if (actions !== null) {
       blocks.push(
         quoteFile(`${ADS_FILES.actions} (open items only)`, extractOpenActions(actions) ?? actions)
+      );
+    }
+    // The four layers' knowledge: why numbers move, how to read them, the
+    // situations, the account's own rules, and the latest journal rows.
+    const howMetaScales = text(ADS_FILES.howMetaScales);
+    if (howMetaScales !== null) blocks.push(quoteFile(ADS_FILES.howMetaScales, howMetaScales));
+    const reading = text(ADS_FILES.readingTheNumbers);
+    if (reading !== null) blocks.push(quoteFile(ADS_FILES.readingTheNumbers, reading));
+    const situations = text(ADS_FILES.situations);
+    if (situations !== null) blocks.push(quoteFile(ADS_FILES.situations, situations));
+    const learnings = text(ADS_FILES.accountLearnings);
+    if (learnings !== null) blocks.push(quoteFile(ADS_FILES.accountLearnings, learnings));
+    const journal = text(ADS_FILES.decisionJournal);
+    if (journal !== null) {
+      blocks.push(
+        quoteFile(
+          `${ADS_FILES.decisionJournal} (header and the last ${JOURNAL_ROWS_IN_CONTEXT} rows)`,
+          lastCsvRows(journal, JOURNAL_ROWS_IN_CONTEXT) || '(empty)'
+        )
       );
     }
   }
